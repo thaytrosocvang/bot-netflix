@@ -271,7 +271,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const text = await response.text();
         const { rows, errors } = parseTxtContent(text);
-
         const inserted = await insertLinks(rows);
 
         const summary = [
@@ -303,13 +302,18 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (!platform) return;
 
-      const link = await getNextLink(platform);
       const meta = getPlatformMeta(platform);
+      const link = await getNextLink(platform);
+
+      await interaction.deferUpdate();
+
+      if (!interaction.channel) {
+        return;
+      }
 
       if (!link) {
-        await interaction.reply({
-          content: `❌ Hết link cho ${meta.label}!`,
-          ephemeral: true
+        await interaction.channel.send({
+          content: `❌ Hết link cho ${meta.label}!`
         });
         return;
       }
@@ -332,11 +336,12 @@ client.on(Events.InteractionCreate, async interaction => {
           .setURL(link)
       );
 
-      await interaction.reply({
+      await interaction.channel.send({
         embeds: [resultEmbed],
-        components: [openRow],
-        ephemeral: true
+        components: [openRow]
       });
+
+      return;
     }
   } catch (error) {
     console.error('Lỗi interaction:', error);
