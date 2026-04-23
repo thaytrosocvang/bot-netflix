@@ -1,0 +1,10 @@
+{
+  "phone": [
+    "https://phone-link-2.example"
+  ],
+  "pc": [],
+  "tv": [
+    "https://tv-link-1.example",
+    "https://tv-link-2.example"
+  ]
+}
