@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
+import pg from 'pg';
 import {
   Client,
   GatewayIntentBits,
@@ -16,51 +15,19 @@ import {
   ActivityType
 } from 'discord.js';
 
+const { Pool } = pg;
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const LINKS_FILE = path.resolve('./links.json');
 
-function readLinksFile() {
-  try {
-    if (!fs.existsSync(LINKS_FILE)) {
-      const initialData = { phone: [], pc: [], tv: [] };
-      fs.writeFileSync(LINKS_FILE, JSON.stringify(initialData, null, 2), 'utf8');
-      return initialData;
-    }
-
-    const raw = fs.readFileSync(LINKS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-
-    return {
-      phone: Array.isArray(data.phone) ? data.phone : [],
-      pc: Array.isArray(data.pc) ? data.pc : [],
-      tv: Array.isArray(data.tv) ? data.tv : []
-    };
-  } catch (error) {
-    console.error('Lỗi đọc links.json:', error);
-    return { phone: [], pc: [], tv: [] };
-  }
-}
-
-function writeLinksFile(data) {
-  fs.writeFileSync(LINKS_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function getNextLink(platform) {
-  const linksData = readLinksFile();
-
-  if (!linksData[platform] || linksData[platform].length === 0) {
-    return null;
-  }
-
-  const nextLink = linksData[platform].shift();
-  writeLinksFile(linksData);
-  return nextLink;
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
 function getPlatformMeta(platform) {
   if (platform === 'phone') {
@@ -84,6 +51,54 @@ function getPlatformMeta(platform) {
     emoji: '📺',
     buttonText: 'Link TV'
   };
+}
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS links (
+      id SERIAL PRIMARY KEY,
+      platform TEXT NOT NULL CHECK (platform IN ('phone', 'pc', 'tv')),
+      url TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+}
+
+async function getNextLink(platform) {
+  const db = await pool.connect();
+
+  try {
+    await db.query('BEGIN');
+
+    const result = await db.query(
+      `
+      SELECT id, url
+      FROM links
+      WHERE platform = $1
+      ORDER BY id ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+      `,
+      [platform]
+    );
+
+    if (result.rows.length === 0) {
+      await db.query('COMMIT');
+      return null;
+    }
+
+    const nextRow = result.rows[0];
+
+    await db.query('DELETE FROM links WHERE id = $1', [nextRow.id]);
+
+    await db.query('COMMIT');
+    return nextRow.url;
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  } finally {
+    db.release();
+  }
 }
 
 const commands = [
@@ -165,7 +180,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (!platform) return;
 
-      const link = getNextLink(platform);
+      const link = await getNextLink(platform);
       const meta = getPlatformMeta(platform);
 
       if (!link) {
@@ -232,6 +247,7 @@ app.listen(PORT, () => {
 
 (async () => {
   try {
+    await initDb();
     await registerCommands();
     await client.login(process.env.DISCORD_TOKEN);
   } catch (error) {
