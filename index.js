@@ -1,157 +1,68 @@
-import {
-  Client,
-  GatewayIntentBits,
-  SlashCommandBuilder,
-  Routes
-} from 'discord.js';
-
-import { REST } from '@discordjs/rest';
-import { Pool } from 'pg';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import { spawn } from 'child_process';
-
-dotenv.config();
+const { Client, GatewayIntentBits } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// ===== TẠO THƯ MỤC LƯU COOKIE =====
+const cookieDir = path.join(__dirname, "cookies");
 
-client.once('ready', () => {
+if (!fs.existsSync(cookieDir)) {
+  fs.mkdirSync(cookieDir);
+}
+
+// ===== BOT READY =====
+client.on("clientReady", () => {
   console.log(`Bot ready: ${client.user.tag}`);
-
-  client.user.setPresence({
-    status: 'idle',
-    activities: [{ name: 'Netflix Free', type: 0 }]
-  });
 });
 
-const commands = [
-  new SlashCommandBuilder()
-    .setName('upcookie')
-    .setDescription('Upload file cookie (Admin only)')
-    .addAttachmentOption(option =>
-      option.setName('file')
-        .setDescription('File txt cookie')
-        .setRequired(true)
-    ),
+// ===== NHẬN FILE COOKIE =====
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
 
-  new SlashCommandBuilder()
-    .setName('start')
-    .setDescription('Lấy link netflix')
-].map(cmd => cmd.toJSON());
+  // Nếu có file đính kèm
+  if (message.attachments.size > 0) {
+    const attachment = message.attachments.first();
 
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    if (!attachment.name.endsWith(".txt")) {
+      return message.reply("❌ Chỉ nhận file .txt");
+    }
 
-(async () => {
-  await rest.put(
-    Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-    { body: commands }
-  );
-})();
-
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  // ===============================
-  // UP COOKIE
-  // ===============================
-  if (interaction.commandName === 'upcookie') {
-
-    if (interaction.user.id !== process.env.ADMIN_ID) {
-      return interaction.reply({
-        content: '❌ Chỉ admin mới dùng được.',
-        ephemeral: true
+    try {
+      const response = await axios.get(attachment.url, {
+        responseType: "arraybuffer",
       });
+
+      const filePath = path.join(cookieDir, "cookies.txt");
+
+      fs.writeFileSync(filePath, response.data);
+
+      message.reply("✅ Upload cookie thành công!");
+      console.log("Cookie saved to:", filePath);
+    } catch (err) {
+      console.error(err);
+      message.reply("❌ Lỗi khi tải file.");
     }
-
-    const attachment = interaction.options.getAttachment('file');
-
-    const response = await fetch(attachment.url);
-    const text = await response.text();
-
-    const blocks = text.split('– Email:').slice(1);
-
-    if (!blocks.length) {
-      return interaction.reply('❌ Không tìm thấy cookie hợp lệ.');
-    }
-
-    let count = 0;
-
-    for (const block of blocks) {
-      const cookie = '– Email:' + block.trim();
-
-      await pool.query(
-        'INSERT INTO cookies (cookie_text) VALUES ($1)',
-        [cookie]
-      );
-
-      count++;
-    }
-
-    interaction.reply(`✅ Đã upload ${count} cookie thành công.`);
   }
 
-  // ===============================
-  // START CONVERT
-  // ===============================
-  if (interaction.commandName === 'start') {
+  // Test lệnh đơn giản
+  if (message.content === "!checkcookie") {
+    const filePath = path.join(cookieDir, "cookies.txt");
 
-    await interaction.deferReply();
-
-    const result = await pool.query(
-      'SELECT * FROM cookies ORDER BY id ASC LIMIT 1'
-    );
-
-    if (!result.rows.length) {
-      return interaction.editReply(
-        '❌ Hết link cookie netflix! Vui lòng chờ admin Tún Kịt upload thêm.'
-      );
+    if (!fs.existsSync(filePath)) {
+      return message.reply("⚠ Chưa có file cookie.");
     }
 
-    const cookie = result.rows[0];
-    const cookieText = cookie.cookie_text;
-
-    const python = spawn('python', ['convert_single.py', cookieText]);
-
-    let output = '';
-
-    python.stdout.on('data', data => {
-      output += data.toString();
-    });
-
-    python.on('close', async () => {
-      try {
-        const data = JSON.parse(output);
-
-        await pool.query(
-          'DELETE FROM cookies WHERE id = $1',
-          [cookie.id]
-        );
-
-        const message = `
-🎬 **NETFLIX FREE**
-
-📧 Email: ${data.email}
-📦 Plan: ${data.plan}
-
-📱 Mobile: ${data.mobile}
-💻 PC: ${data.pc}
-📺 TV: ${data.tv}
-        `;
-
-        interaction.editReply(message);
-
-      } catch (err) {
-        interaction.editReply('❌ Lỗi convert cookie.');
-      }
-    });
+    message.reply("📂 Cookie file tồn tại, sẵn sàng check.");
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// ===== LOGIN =====
+client.login(process.env.TOKEN);

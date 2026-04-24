@@ -4,24 +4,21 @@
   "description": "Discord bot phát link / token Netflix (phone-pc-tv) + upload cookies",
   "type": "module",
   "main": "index.js",
-
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-
   "engines": {
     "node": ">=18"
   },
-
   "dependencies": {
+    "axios": "^1.15.2",
     "discord.js": "^14.26.3",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "node-fetch": "^3.3.2",
     "pg": "^8.20.0"
   },
-
   "devDependencies": {
     "nodemon": "^3.1.0"
   }
