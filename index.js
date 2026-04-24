@@ -270,18 +270,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setStyle(ButtonStyle.Primary),
     );
 
+    const rowGuide = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('📖 Hướng Dẫn Điện Thoại')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://drive.google.com/drive/folders/1QAw4249og5hJuqF4jAcwCecTvyytv2jZ?usp=drive_link'),
+      new ButtonBuilder()
+        .setLabel('📖 Hướng Dẫn Máy Tính')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://drive.google.com/drive/folders/1S7bINLNLjy_Phmhc76DSugm1xgA44OJ_?usp=drive_link'),
+    );
+
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
-      .setTitle('🎬 Netflix Link Generator')
+      .setTitle('🎬 Netflix của Tún Kịt')
       .setDescription(
         '**Chọn loại link bạn muốn tạo:**\n\n' +
         '📱 **Điện Thoại** – Tối ưu cho mobile\n' +
         '🖥️ **Máy Tính** – Tối ưu cho desktop\n\n' +
-        `> 🗂️ Còn **${count}** cookie trong kho`,
+        `> 🗂️ Còn **${count}** cookie trong kho\n\n` +
+        '> ⚠️ Nếu acc không xem được pls log out và đổi qua acc khác, ping admin nếu có thắc mắc',
       )
-      .setFooter({ text: 'Bot by DINO STORE NETFLIX' });
+      .setFooter({ text: 'Bot by Sếp Tún Kịt' });
 
-    await interaction.reply({ embeds: [embed], components: [row] });
+    await interaction.reply({ embeds: [embed], components: [row, rowGuide] });
     return;
   }
 
@@ -381,7 +393,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           value: `[Mở Link](${link})\n\`${link}\``,
         },
       )
-      .setFooter({ text: `DINO STORE NETFLIX • ${new Date().toLocaleTimeString('vi-VN')}` });
+      .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
 
     await interaction.editReply({ content: '', embeds: [embed] });
   }
