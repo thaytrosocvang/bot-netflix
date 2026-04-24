@@ -9,7 +9,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Discord client
+// ===== ENV =====
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+
+// ===== DISCORD CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -18,24 +21,26 @@ const client = new Client({
   ],
 });
 
-// Thư mục lưu cookie
+// ===== THƯ MỤC LƯU COOKIE =====
 const cookieDir = path.join(__dirname, 'cookies');
 if (!fs.existsSync(cookieDir)) fs.mkdirSync(cookieDir, { recursive: true });
 
-// Ready + trạng thái “Chờ”
+// ===== READY =====
 client.once(Events.ClientReady, (c) => {
   console.log(`Bot ready: ${c.user.tag}`);
+
+  // 🟡 Chờ
   c.user.setPresence({
-    status: 'idle', // 🟡 Chờ
+    status: 'idle',
     activities: [{ name: 'Netflix Free', type: 0 }],
   });
 });
 
-// Upload cookie bằng cách gửi file .txt vào chat
+// ===== UPLOAD COOKIE BẰNG FILE TXT TRONG CHAT =====
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // Nếu có file đính kèm
+  // 1) Nếu có file đính kèm
   if (message.attachments.size > 0) {
     const attachment = message.attachments.first();
     const name = (attachment?.name || '').toLowerCase();
@@ -47,9 +52,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     try {
       const res = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+
+      // Lưu cố định vào cookies/cookies.txt
       const filePath = path.join(cookieDir, 'cookies.txt');
       fs.writeFileSync(filePath, res.data);
-      await message.reply('✅ Upload cookie thành công!');
+
+      await message.reply('✅ Upload cookie thành công! (đã lưu vào cookies/cookies.txt)');
       console.log('Cookie saved to:', filePath);
     } catch (err) {
       console.error(err);
@@ -58,20 +66,21 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  // Lệnh test
-  if (message.content === '!checkcookie') {
+  // 2) Lệnh test
+  if (message.content.trim() === '!checkcookie') {
     const filePath = path.join(cookieDir, 'cookies.txt');
     if (!fs.existsSync(filePath)) {
-      await message.reply('⚠ Chưa có file cookie.');
+      await message.reply('⚠ Chưa có file cookie. Hãy gửi file cookies.txt vào đây.');
       return;
     }
-    await message.reply('📂 Cookie file tồn tại, sẵn sàng check.');
+    const size = fs.statSync(filePath).size;
+    await message.reply(`📂 Đã có cookies.txt (size: ${size} bytes).`);
   }
 });
 
-// Login
-if (!process.env.TOKEN) {
-  console.error('❌ Missing TOKEN in env');
+// ===== LOGIN =====
+if (!DISCORD_TOKEN) {
+  console.error('❌ Missing DISCORD_TOKEN in env (Railway Variables).');
   process.exit(1);
 }
-client.login(process.env.TOKEN);
+client.login(DISCORD_TOKEN);
