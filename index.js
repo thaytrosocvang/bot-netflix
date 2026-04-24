@@ -369,6 +369,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const link = mode === 'phone' ? result.phone_link : result.pc_link;
 
+    // Guard: link rỗng (checker chỉ tạo được 1 loại token)
+    if (!link) {
+      const fallbackLink = mode === 'phone' ? result.pc_link : result.phone_link;
+      const fallbackName = mode === 'phone' ? '🖥️ Link Máy Tính' : '📱 Link Điện Thoại';
+      if (fallbackLink) {
+        await interaction.editReply(
+          `⚠️ Không tạo được link ${mode === 'phone' ? 'Điện Thoại' : 'PC'} cho cookie này.\n` +
+          `Sử dụng ${fallbackName} thay thế:\n\`${fallbackLink}\``,
+        );
+      } else {
+        await interaction.editReply(
+          `❌ Cookie này không tạo được link NFToken. Cookie đã bị xóa.\n` +
+          `Còn **${await countCookies()}** cookie khác — vui lòng thử lại.`,
+        );
+      }
+      return;
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0xe50914)
       .setTitle('✅ Tạo Link Thành Công!')

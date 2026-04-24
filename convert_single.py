@@ -71,6 +71,47 @@ txt_fields:
 """
 
 
+def _extract_nftoken_links(content: str):
+    """
+    Trích xuất PC link và Phone link từ nội dung file output.
+
+    Chiến lược (theo thứ tự ưu tiên):
+    1. Tìm theo label (PC Login / Phone Login / Desktop Login / Mobile Login …)
+    2. Fallback: tìm theo URL pattern đặc trưng của Netflix NFToken
+       - PC   : https://netflix.com/?nftoken=...
+       - Phone: https://netflix.com/unsupported?nftoken=...
+    """
+
+    # ── 1. Tìm theo label ──────────────────────────────────────────────────
+    # Các biến thể label checker có thể dùng
+    pc_label_pattern    = r"(?:PC|Desktop|Computer)\s*(?:Login|NFToken|Link)\s*:\s*(https?://\S+)"
+    phone_label_pattern = r"(?:Phone|Mobile)\s*(?:Login|NFToken|Link)\s*:\s*(https?://\S+)"
+
+    pc_m    = re.search(pc_label_pattern,    content, re.IGNORECASE)
+    phone_m = re.search(phone_label_pattern, content, re.IGNORECASE)
+
+    pc_link    = pc_m.group(1).strip()    if pc_m    else None
+    phone_link = phone_m.group(1).strip() if phone_m else None
+
+    # ── 2. Fallback theo URL pattern ───────────────────────────────────────
+    # PC token: netflix.com/?nftoken=  (không có /unsupported)
+    # Phone token: netflix.com/unsupported?nftoken=
+    if not pc_link:
+        # Tìm tất cả URL nftoken, loại ra URL có /unsupported
+        all_nftokens = re.findall(r"https?://[^\s\r\n]*nftoken=[^\s\r\n]+", content, re.IGNORECASE)
+        for url in all_nftokens:
+            if "unsupported" not in url.lower():
+                pc_link = url.strip()
+                break
+
+    if not phone_link:
+        phone_matches = re.findall(r"https?://[^\s\r\n]*unsupported[^\s\r\n]*nftoken=[^\s\r\n]+", content, re.IGNORECASE)
+        if phone_matches:
+            phone_link = phone_matches[0].strip()
+
+    return pc_link, phone_link
+
+
 def convert(cookie_text: str) -> dict:
     tmpdir = tempfile.mkdtemp(prefix="nf_convert_")
     try:
@@ -110,7 +151,6 @@ def convert(cookie_text: str) -> dict:
         hit_files = []
         if os.path.exists(output_dir):
             for root, dirs, files in os.walk(output_dir):
-                # Bỏ qua các thư mục không phải hit
                 skip_keywords = ("duplicate", "failed", "broken", "on hold", "on_hold", "unknown", "free")
                 if any(kw in root.lower() for kw in skip_keywords):
                     continue
@@ -125,10 +165,10 @@ def convert(cookie_text: str) -> dict:
             except Exception:
                 continue
 
-            pc_m    = re.search(r"PC Login:\s*(https?://\S+)",    content, re.IGNORECASE)
-            phone_m = re.search(r"Phone Login:\s*(https?://\S+)", content, re.IGNORECASE)
+            pc_link, phone_link = _extract_nftoken_links(content)
 
-            if pc_m and phone_m:
+            # Chỉ cần có ÍT NHẤT 1 link là trả về kết quả
+            if pc_link or phone_link:
                 email_m   = re.search(r"Email:\s*(.+)",   content, re.IGNORECASE)
                 plan_m    = re.search(r"Plan:\s*(.+)",    content, re.IGNORECASE)
                 country_m = re.search(r"Country:\s*(.+)", content, re.IGNORECASE)
@@ -136,8 +176,8 @@ def convert(cookie_text: str) -> dict:
                     "email":      (email_m.group(1).strip()   if email_m   else ""),
                     "plan":       (plan_m.group(1).strip()    if plan_m    else ""),
                     "country":    (country_m.group(1).strip() if country_m else ""),
-                    "pc_link":    pc_m.group(1).strip(),
-                    "phone_link": phone_m.group(1).strip(),
+                    "pc_link":    pc_link    or "",
+                    "phone_link": phone_link or "",
                 }
 
         # Không tạo được NFToken — cookie chết hoặc không có proxy
