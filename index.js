@@ -339,17 +339,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── /upcookie ──────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'upcookie') {
     if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
+      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.' });
       return;
     }
 
     const attachment = interaction.options.getAttachment('file');
     if (!attachment.name.toLowerCase().endsWith('.txt')) {
-      await interaction.reply({ content: '❌ Chỉ nhận file `.txt`.', ephemeral: true });
+      await interaction.reply({ content: '❌ Chỉ nhận file `.txt`.' });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply();
 
     try {
       const res     = await axios.get(attachment.url, { responseType: 'text', timeout: 10_000 });
