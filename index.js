@@ -389,7 +389,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         { name: '🌍 Country',                             value: result.country || '??',           inline: true },
         {
           name:  mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính',
-          value: `[Mở Link](${link})\n\`${link}\``,
+          value: `[🔗 Mở Link / Copy tại đây](${link})`,
         },
       )
       .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
