@@ -32,7 +32,7 @@ client.once(Events.ClientReady, (c) => {
   // 🟡 Chờ
   c.user.setPresence({
     status: 'idle',
-    activities: [{ name: 'Netflix Free', type: 0 }],
+    activities: [{ name: 'Tún Kịt súc vật', type: 0 }],
   });
 });
 
