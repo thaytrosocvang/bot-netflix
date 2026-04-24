@@ -1,0 +1,20 @@
+NETFLIX FREE :👇
+
+Name: Abi
+Email: benjaminrosales9366@gmail.com
+Country: US
+Plan: Free
+Hold Status: No
+Email Verified: Yes
+Profiles (4): Sparky, Abi, Wes, Niños
+
+--------------------------------------------------------------------------------------------------
+
+Checker By: github.com/harshitkamboj | Website: harshitkamboj.in
+Netflix COOKIE :👇
+
+.netflix.com	TRUE	/	FALSE	1803433015	nfvdid	BQFmAAEBEOamUDwM-TNnAdk4iDIfyttgeXhbh9w0Bm3sC9bfErzL16dkiqDIPahXyJuk-xh78KXu9l70b9ZBs8thckQPt8xkDZvxVQrDD8fDoE33MNKvH_BepmmbNSNUJuTNyhO2nZV26piHR50ypVQCwt4EbeLu
+.netflix.com	TRUE	/	TRUE	1803433047	NetflixId	v%3D3%26ct%3DBgjHlOvcAxL3AmoGBp9vDlP_dE_RKbo0mwRX0KEBogb23WHiWwbKgOuUCXP8bvewbYvUjC1pW4kQaPlL0ns8D7yPJNGpUpw2cOGMgkgihx8WP36LVLd1X92A0bxv1aZmJrmpnkjiSHmbc89prg_IS8ItuL0rmQ7HTHmhsafglwu0863oHCEtwks-WuRUfkgcDkIL_8n9pcNCBIvqRKbGnt6BUZXAX0oo4Bsanv9pc9jOS_MmkIaNEJQ14ZVfsxNHNBSZGKnIihpfoml9E1vjuKTr0OPuiP0VnwjyO1lretqcrsFWLENI-43-puFrXy6bECQDzrqckIJQt3X3cuHrnzXucrw96nOQ6qmYwA5mRqVUnsGp18zy3_IL3ZXPOeDM-tTivqhFtakw2Sfsyag5WGvvXRud5ISa1xaVp1xn2xUyFZu1ovpcQbwMIOBbhDP4Y-csZZ_08EbCkQr6SjCnWFyyKay4cQ3hPUF-DpEbA-F1Ow0OepkJsRaFFSpCZdUcxxgGIg4KDGrdxzL7ZXt7I_CoTw..%26pg%3D5WSDVMDZKNGOPLIENX5KOWPCAQ%26ch%3DAQEAEAABABRTEMT_xsBckGHonpgmBEsnI_zTznf4ptw.
+.netflix.com	TRUE	/	FALSE	1803436103	OptanonConsent	isGpcEnabled=0&datestamp=Mon+Feb+23+2026+20%3A28%3A23+GMT-0600+(hora+est%C3%A1ndar+central)&version=202601.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=8da4f79a-c73b-4229-9e33-fb0787528665&interactionCount=0&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1779676102	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1779676102	netflix-sans-normal-3-loaded	true

@@ -1,0 +1,19 @@
+NETFLIX FREE :👇
+
+Name: Rex
+Email: plank.anthony@yahoo.com
+Country: US
+Plan: Free
+Hold Status: No
+Email Verified: Yes
+Profiles (3): Rex, None, Kids
+
+--------------------------------------------------------------------------------------------------
+
+Checker By: github.com/harshitkamboj | Website: harshitkamboj.in
+Netflix COOKIE :👇
+
+.netflix.com	TRUE	/	FALSE	1800288791	NetflixId	ct%3DBgjHlOvcAxLtA57XijieF8mEc8-_RsvL59QrUZQP68x2SmSDlM-MYUTt7v7FR9mGHHvvLkF3aTa6YlOlXektcZjuDYV0bAS9L1F7E7yuZsg0gCIvsH8dnStjltruH2E-F_Vdjr2WR5-WcHtDA_dvx0jSP-IxEZerq0iiw2hWiTA56Q4RZ27bzst7924A81-A0pN4fIOdJMD1X1PEkJfackgZYzY4RJA-Z1CnuiZGcLbVStwtdASlGJ9vNA_pjIjzqPMXw366Pzu-j9YqsRJHCuYgwub5hbXNDiN1lz3Va3DEbSysfuiXhM3NS-pmUQHdV2aWdEkRyP9ugoXqBbpBIu9dGRnuAcioVRW-TIXjW3uXZ9UclVo8WCodXyd8J_AKrMr5PaXtLwa6ItdXA3GyQXYCUEywJJg28h0as7LO8E093UyZ2U5kF1_a8QYtwsgk3ZPYQtAzYYFrtcHqNcBjax4Z2iiv9oVR-gCbsZ-S38yYW9Srh8fo4rTMt8zaHnY_W1uWCCOMsuoD2P8IZ-sasicr1PUFBpnf5FMXJ8r3vVr2ztdxlzrOdhwlCgIK1V4Qf4vuXXjyN0Xuh4n2k9UJDtkWDGt5Z0JKSie8GEfI92aRF89ZY0i5uK9XyEwhDb7X4b4KSvsYFxjzK5Zdyo87Ig_-zfPOgqUYBiIOCgw6QEhtwMcD4wLhhsI.%26ch%3DAQEAEAABABR-OL_C511osPEW1kACLbBrl0ozPzKrT20.%26v%3D3%26pg%3DZV4RFLZQH5CY7AAVCTFY4VYVNI
+.netflix.com	TRUE	/	FALSE	1800288791	OptanonConsent	isGpcEnabled=0&datestamp=Sun+Jan+18+2026+11%3A13%3A11+GMT-0500+(Eastern+Standard+Time)&version=202512.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=79058ecd-2a59-4528-b601-5a26563b8ed8&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&crTime=1768072764639&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1778949662	nfvdid	BQFmAAEBECl02kt9pHJc80VnkWupl7Zg5VACeNtj7aw3JrPgbLwbMKiG-lMHC4YZbSm-SqiWR4AyerBHqQlPN-gyOVRZD80w9na-e8J04sW2SYbEsrCDyXg7S7al6L3CvmsKt7whihoBhysOjPzqTZ20mDjJ-eYN
+.netflix.com	FALSE	/	FALSE	1792334194	OptanonAlertBoxClosed	2025-10-18T14:36:34.069Z

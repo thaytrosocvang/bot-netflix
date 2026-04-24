@@ -1,0 +1,13 @@
+.netflix.com	FALSE	/	FALSE	1834810326	OptanonConsent	isGpcEnabled=0&datestamp=Sat+Feb+21+2026+12%3A32%3A06+GMT%2B0700+(Western+Indonesia+Time)&version=202601.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=5518fa49-5c65-43c7-b5d7-b66b11a0280b&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false
+.netflix.com	FALSE	/	TRUE	1834810324	NetflixId	v%3D3%26ct%3DBgjHlOvcAxL_Aleg2XuChELYFXZklEiAjODvIlJwWsXICybTnk5bVV-_SedX0UU7ZcleJkDzepElT6LKf3ABZPdsUb6dloWKlPcemUDp6RNrmCwOVJllP1Y0NjNhkqLY0EOS_irI6DNgWXX1UbxqNcrE6vx4sHd7CNopXyFtr6CZXFmosU2sFYjjN9p-j2KWHd5ye8-RuKNmv-h53Oy6spnxeSrRlFA7U5dIvMTwewLdvafUmH6NoditEhqCNXzkdpURhY24syLf_BoUgUn-v_8pjjbnwoI7kHzm53K4DXE4KT9vfqD2jjwWlf6E4gzzZ6UIKHgPFPB-EFUPl5rkxm1t-7NTFZNqOJCmh2miS7x81qB5_nN4OO7uFv7x_mtGv9rXbpAFiiOREis65MCDDI4iaVvvBQpRNzq4qGoTPAZqZW1GbizDtBPGSy74km6Rn64ivned1bcdZAbpifK0UQXmq_DYwyLkr6g4AAxdxJKev53cEjRcMbHbdQoIPqugh_UjlM2cNTvgGAYiDgoMhSyln_dDt8MJBoES%26pg%3DWDQBWX2N5ZHDPI24XEKTGH37HI%26ch%3DAQEAEAABABRa4a01aclye57--j-OS4mBpxDHduVKZCE.
+.netflix.com	FALSE	/	FALSE	1803283028	profilesNewSession	0
+.netflix.com	FALSE	/	TRUE	1803359237	gsid	9b550dca-28ef-4ab9-bb84-e98c6ec2a94c
+.netflix.com	FALSE	/	FALSE	1828374227	nfvdid	BQFmAAEBEHS4s3aFVM8y0niOkSUvmlRgiI23nUBpd1yHaZ6vcDvaK8uNNgNx-E1Q1EIHBzKMsW9_YAbC0H9KmS_psXQVxJXX-WLqxTBtVLiiLTrbSNhnBG58Ii4Tq4gHwtZ2ZMIxb5jou79pU7-HL9AUesaBHHzY
+.netflix.com	FALSE	/	FALSE	1811050326	netflix-sans-bold-3-loaded	true
+.netflix.com	FALSE	/	FALSE	1811050326	netflix-sans-normal-3-loaded	tr– Email: weatherleybernardy213@hotmail.com
+.netflix.com	TRUE	/	TRUE	1806385212	SecureNetflixId	v%3D3%26mac%3DAQEAEQABABTnOCqL59X445G9aomeaH_8nprSw9yDh2w.%26dt%3D1774849219601
+.netflix.com	TRUE	/	FALSE	1778949652	flwssn	6063ad32-c7af-44af-8583-5a540b44b979
+.netflix.com	TRUE	/	FALSE	1782880468	netfli–	Email: stephentodd7414@outlook.com
+.netflix.com	TRUE	/	FALSE	1778949661	dsca	true
+.netflix.com	TRUE	/	FALSE	1778949661	pas	%7B%22supplementals%22%3A%7B%22muted%22%3Afalse%7D%7D
+.netflix.com	TRUE	/	FALSE	1779134558	firstLolomoAfterOnRamp	true

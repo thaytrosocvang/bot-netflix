@@ -1,0 +1,12 @@
+.netflix.com	TRUE	/	FALSE	1797665132	nfvdid	BQFmAAEBED4djULQ9TVal0XJVokppBFgXVAWWKSe2qXclW557RXf5p0ONjQFPv4Ef00Q8rzvadEta06uniJgXDxEvvw54dogK8drhFsn6by6jjI-vj4U6kGJjwPcjBSHoVMtH1ZXNS5xyh5FnRfqzd6m8KEF2eCm
+.netflix.com	TRUE	/	TRUE	1806640466	NetflixId	ct%3DBgjHlOvcAxKBBF4chNHqUnVVZvCrcaV4LDA1VgqtmDomOGbfnf5trLmKyZVg686hGxM6J4CTOz_Gw5AN2v8yqwTelCEWG5YAWVXy10cdENrZHwaMH--DWUB_3JIQJcylE51pSPpNPEpM_q3GBYn06lx1tyR1L98Zdksy0GxGYbBFoyQHLqwjjt7F4gBQgE9nTfnzZBucCpJqoX0Yq44dudRr9bXCaJtXsaUOIPF223NXZLrsKVyvt0ZJmZ99K2NcqcSat6xQQ1TNV8Vu03mDCvACxp4Ndqj5u6hLb3E-bp7QyMtXZWQlRZY8xHKyLyGX6elduY0D7033tN59GznFUzCEzuLOhjHYs3W3tkcsLIgJBsGEcPf67osGV22QWz3_zzBsd11xCPkNSUJcqYMmtRtX-qSmX-4V4B7Rjy6TdSbvjkya-PwUbDGDAnDpeO38rnlP7o90nJAbSnqKtbvcO3s11nbaCuW_UwMm9gPORoxOhpv7vtw60X6OU5qQKlRFEI1tX1b7PNr8f-sKnvoNgA5JzxGeRRJ4DeR0EUqbJtkEyQwHYgbZy9zeOiCKIRNhP1gfqiGp8bBB2laK0WdYGkeTKB-uovfCfxmYsXpnCikk9OrdM2-k0Ebm0K1UhnbfElK3wouofbUJlpFUlfAOoxtxIf8YhHjuUddvO0Y2CCr69DIRefJLGByrXhgGIg4KDAvAp2bVh32HGjqQeQ..%26ch%3DAQEAEAABABTeAn4R9LANXIAOouhOFS7m3sqYyyBvIp8.%26v%3D3%26pg%3DNA27ZNGJTJFZ3EXXIFALMLDKAM
+.netflix.com	TRUE	/	FALSE	1806640468	OptanonConsent	isGpcEnabled=0&datestamp=Thu+Apr+02+2026+11%3A34%3A28+GMT%2B0700+(Waktu+Indonesia+Barat)&version=202602.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=21a91b88-908b-4e31-846a-63f8c18370f2&interactionCount=0&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false&prevHadToken=0
+.netflix.com	TRUE	/	TRUE	1779390903	gsid	a6d52007-f4a9-4480-b153-d99c9ad884fb
+.netflix.com	TRUE	/	FALSE	1782880468	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1779390903	profilesNewSession	0
+.netflix.com	TRUE	/	FALSE	1782880468	netfli–	Email: stephentodd7414@outlook.com
+.netflix.com	TRUE	/	FALSE	1778949661	dsca	true
+.netflix.com	TRUE	/	FALSE	1778949661	netflix-sans-normal-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1779134558	firstLolomoAfterOnRamp	true
+.netflix.com	TRUE	/	FALSE	1779134558	flwssn	5b796ea5-3d3e-42e9-85e1-dab886f19cb8
+.netflix.com	TRUE	/	TRUE	1806764535	SecureNetflixId	v%3D3%26mac%3DAQEAEQABABTPTFSy5lTrJYjE5O-bJBj-Jejsui7NbKI.%26dt%3D1775229103511

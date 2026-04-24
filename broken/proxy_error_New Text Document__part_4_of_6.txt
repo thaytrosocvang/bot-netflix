@@ -1,0 +1,10 @@
+.netflix.com	TRUE	/	FALSE	1782880468	netfli–	Email: stephentodd7414@outlook.com
+.netflix.com	TRUE	/	FALSE	1778949661	dsca	true
+.netflix.com	TRUE	/	FALSE	1778949661	nfvdid	BQFmAAEBEAr-LCbSvElfEULmYll80n1gGDKm9_lLypAkcrVhDnNsH7dwOxgtSCvJTJD7TCOkuL3qd7d50If6oNyoYG7Txy_EPSMaPwJduadaxQFiebRiEcg2JFtJaZAib3Ov1TH-zLiqOXIaVguSZs7yi5lUPVFF
+.netflix.com	TRUE	/	FALSE	1778949661	gsid	27b7ddf0-f28e-456f-a093-9a561302eab9
+.netflix.com	TRUE	/	FALSE	1778949661	NetflixId	v%3D3%26ct%3DBgjHlOvcAxLqAkcYCrDcT9gby5Gq-KaVHAKXToZbzsI8alcZ_OLMIZzMC66mwHOTI1TpK-bqDtab6DBcMowL9zntAvTqR1fcSq_d8wkmMsUXSwjEYMRypTbGUk37g0YHQiSkmpH6nadr43bhPR7UikVNcDz2dfBGAOVnzl_Lg1JaSt4zRDGZdQiXR7x4bcUncTpWU6m4UqDcDri9EwjRFV49C2rN0tGpwGRddJ8RqCxZXs6KZNgHuUMPxAqZJSXF_LBKZzVm30BtBgKAAJtiat291zUsoaMDNTHdW6sHk5SwcsB3qNQOdFTLTblEF7VPtuG986ZvHfNfPcwzcgdCpsPHpP09m_975X37Fo_OPaulLXWtrEEVRs2KJX_qwNaxKvrsLbS8Z3HauqbIpH8-5wZg1IH-s2qSb3SEFJMCz27d-rULN72pR82N65BLL5xXiwMy_cucCkUYW4XT-hSGXbgddFJ_eCzttewCsV1WosKwE9j9GAYiDgoMyfD_4HPV4b0X0WDo%26pg%3DYCD5DB366ZEUVJUB6IHCQDQI3U%26ch%3DAQEAEAABABRj2Aw0EH-zVgwGjnGay1JSG4r-WpnhHVw.
+.netflix.com	TRUE	/	FALSE	1778949661	OptanonConsent	isGpcEnabled=0&datestamp=Wed+Mar+04+2026+22%3A42%3A39+GMT%2B0800+(Waktu+Indonesia+Tengah)&version=202601.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=8129934a-7d2f-4499-9fae-7ba862a4f8ed&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&crTime=1772635193964&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1778949661	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1778949661	profilesNewSession	0-sans-normal-3-loaded	t– Email: danahalakft2210@hotmail.com
+.netflix.com	TRUE	/	FALSE	1779134558	firstLolomoAfterOnRamp	true
+.netflix.com	TRUE	/	FALSE	1782077995	netflix-sans-normal-3-loaded	true

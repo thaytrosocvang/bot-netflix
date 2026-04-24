@@ -1,0 +1,19 @@
+NETFLIX FREE :👇
+
+Name: Gloria Gonzalez
+Email: billy.gloria9112015@gmail.com
+Country: US
+Plan: Free
+Hold Status: No
+Email Verified: Yes
+Profiles (3): BILLY, Gloria Gonzalez, Kids
+
+--------------------------------------------------------------------------------------------------
+
+Checker By: github.com/harshitkamboj | Website: harshitkamboj.in
+Netflix COOKIE :👇
+
+.netflix.com	TRUE	/	TRUE	1778949662	NetflixId	v%3D3%26ct%3DBgjHlOvcAxL6Ao7klzXZaEBYejwCiRaf8yvSKy0wUE8i5_hQRzG2cNGLn8q6q1CSOX5xXgz9Rllc3DFflya-6mAvO9y5xV-iq8E2XqrVxmLv1SbDF-vB6cAIYDEIT3Ut6DX1QCU7lequkAk6NsRtkU7f8WKecMWUAfq_Ke6EOIUedPbv57QvB_2Byk6GVgVYktD1hcqu6uxaMCHDY7nuyjiGhLzNQx-QWnDKHGIuH-oFeGGSSH47uKEqHiZ0qVc5qC0tyHlliQEKAF9vckLnS2RgFs0R7EZdyFDgSV2uB6kvww5IaoSXSHXrXEg_Ed7_1XRiaC3qOYzE9dOrzXVviJpXPrzMLu590HhxZZPktMbB_X8YEblkzr1oly8FdeKKQ4ZS9B7jEXuRnOAYbNdq12Gbs6rRQhQHFoNG_meKuN1jjlQqifnTkXo2h4HYPGPtK2tdbQLOkUwZkIqACoGwH-9AJO3DltPZi7nlZQSdesWGUhf8PaKdJmlGSJosp59kTZHg9RgGIg4KDPtlT6R9tkc5P4UP1w..%26ch%3DAQEAEAABABRAFy2vFgyLuOj2Qbfl7hzF1OAhOoT15x8.
+.netflix.com	TRUE	/	FALSE	1778949662	OptanonConsent	isGpcEnabled=0&datestamp=Sat+Aug+17+2024+17%3A53%3A31+GMT-0400+(Eastern+Daylight+Time)&version=202406.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=5240af9c-0193-4d5e-8818-f20e6b38d1a7&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1794590881	nfvdid	BQFmAAEBEE7RWfBWZW-hGmfS3Fgc-IJgZSHB2Pc6EkfIA_IUw1620Q0MfurAGlHocwppgxspCbq3mdAj5DbnlK-Bmsp4U3bIX5Oqr6ZgOL59opPVDNSRcFfjGXaVKYpWAdc292I-HiMoP7sS8A7zVnvNcWrXmycs
+.netflix.com	FALSE	/	FALSE	1792334194	OptanonAlertBoxClosed	2025-10-18T14:36:34.069Z

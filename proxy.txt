@@ -1,0 +1,14 @@
+# Add your proxies here
+# One proxy per line
+# Supported examples:
+# ip:port
+# user:pass@ip:port
+# ip:port@user:pass
+# http://ip:port
+# https://user:pass@ip:port
+# socks4://user:pass@ip:port
+# socks5://user:pass@ip:port
+# ip:port:user:pass
+# user:pass:ip:port
+# ip:port user:pass
+# ip:port|user:pass

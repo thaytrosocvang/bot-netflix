@@ -1,205 +1,157 @@
-// index.js  —  FULL skeleton with cookie→token support
-import 'dotenv/config';
-import express from 'express';
-import pg from 'pg';
-import { spawn } from 'child_process';
 import {
   Client,
   GatewayIntentBits,
-  REST,
-  Routes,
   SlashCommandBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  Events,
-  ActivityType,
-  PermissionFlagsBits
+  Routes
 } from 'discord.js';
 
-const { Pool } = pg;
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const app = express();
-const PORT = Number(process.env.PORT || 3000);
+import { REST } from '@discordjs/rest';
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import { spawn } from 'child_process';
 
-/*──────────────────────────────────  Postgres  ─────────────────────────────*/
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+dotenv.config();
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
 });
 
-async function initDb() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS links (
-      id SERIAL PRIMARY KEY,
-      platform TEXT NOT NULL CHECK (platform IN ('phone','pc','tv')),
-      url TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-/*─────────────────────────────  Cookie ► Token  ────────────────────────────*/
-/**
- * Chạy cookie_converter.py  ➜  JSON  ➜  trả mảng cookies
- */
-function convertTxtToJson(buffer) {
-  return new Promise((res, rej) => {
-    const py = spawn('python', ['cookie_converter.py'], { stdio: ['pipe', 'pipe', 'inherit'] });
-    let out = '';
-    py.stdout.on('data', d => (out += d));
-    py.on('close', code => {
-      if (code !== 0) return rej(new Error('converter exit ' + code));
-      try {
-        res(JSON.parse(out));
-      } catch (e) {
-        rej(e);
-      }
-    });
-    py.stdin.end(buffer);
+client.once('ready', () => {
+  console.log(`Bot ready: ${client.user.tag}`);
+
+  client.user.setPresence({
+    status: 'idle',
+    activities: [{ name: 'Netflix Free', type: 0 }]
   });
-}
+});
 
-/**
- * Ví dụ placeholder: nhận cookie JSON, trả về token-URL
- * TODO: thay bằng logic thật (gọi main.py hoặc API riêng)
- */
-async function getTokenFromCookie(cookieJson) {
-  // ... xử lý, trả về { platform, url }
-  return { platform: 'phone', url: 'https://example.com/token=abc' };
-}
-
-/**
- * Lưu link (token) vào DB
- */
-async function saveTokenLink(platform, url) {
-  await pool.query(
-    'INSERT INTO links (platform,url) VALUES ($1,$2)',
-    [platform, url]
-  );
-}
-
-/*──────────────────────────────  Discord cmds  ─────────────────────────────*/
 const commands = [
   new SlashCommandBuilder()
+    .setName('upcookie')
+    .setDescription('Upload file cookie (Admin only)')
+    .addAttachmentOption(option =>
+      option.setName('file')
+        .setDescription('File txt cookie')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
     .setName('start')
-    .setDescription('Hiển thị bảng chọn thiết bị'),
-
-  new SlashCommandBuilder()
-    .setName('uploadtxt')
-    .setDescription('Upload file txt link thường (giữ nguyên chức năng cũ)')
-    .addAttachmentOption(o => o.setName('file').setDescription('file txt').setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName('uploadcookies')
-    .setDescription('Upload file TXT cookies → token-link')
-    .addAttachmentOption(o => o.setName('file').setDescription('cookie txt').setRequired(true))
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-].map(c => c.toJSON());
+    .setDescription('Lấy link netflix')
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-/*──────────────────────────  Helper gửi panel / kết quả ────────────────────*/
-function panelRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('platform_phone')
-      .setLabel('Link Điện Thoại')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('platform_pc')
-      .setLabel('Link Máy Tính')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('platform_tv')
-      .setLabel('Link TV')
-      .setStyle(ButtonStyle.Success)
+(async () => {
+  await rest.put(
+    Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+    { body: commands }
   );
-}
+})();
 
-function meta(platform) {
-  return {
-    phone: { emoji: '📱', label: 'Điện thoại' },
-    pc:    { emoji: '💻', label: 'Máy tính' },
-    tv:    { emoji: '📺', label: 'TV' }
-  }[platform];
-}
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-/*─────────────────────────────  Interaction logic  ─────────────────────────*/
-client.on(Events.InteractionCreate, async (i) => {
-  try {
-    /* /start ────────────────────────────────────────────────────────────*/
-    if (i.isChatInputCommand() && i.commandName === 'start') {
-      const embed = new EmbedBuilder()
-        .setTitle('START PANEL')
-        .setDescription('Chọn loại thiết bị:\n\n📱 Điện thoại\n💻 Máy tính\n📺 TV');
-      await i.reply({ embeds:[embed], components:[panelRow()] });
-      return;
+  // ===============================
+  // UP COOKIE
+  // ===============================
+  if (interaction.commandName === 'upcookie') {
+
+    if (interaction.user.id !== process.env.ADMIN_ID) {
+      return interaction.reply({
+        content: '❌ Chỉ admin mới dùng được.',
+        ephemeral: true
+      });
     }
 
-    /* /uploadcookies ────────────────────────────────────────────────────*/
-    if (i.isChatInputCommand() && i.commandName === 'uploadcookies') {
-      const attach = i.options.getAttachment('file', true);
-      await i.deferReply({ ephemeral:true });
-      const buf = await (await fetch(attach.url)).arrayBuffer();
-      const cookies = await convertTxtToJson(Buffer.from(buf).toString('utf8'));
+    const attachment = interaction.options.getAttachment('file');
 
-      const added = [];
-      for (const c of cookies) {
-        const { platform, url } = await getTokenFromCookie(c);
-        if (platform && url) {
-          await saveTokenLink(platform, url);
-          added.push({ platform, url });
-        }
-      }
-      await i.editReply(`✅ Đã convert & lưu **${added.length}** token-link.`);
-      return;
+    const response = await fetch(attachment.url);
+    const text = await response.text();
+
+    const blocks = text.split('– Email:').slice(1);
+
+    if (!blocks.length) {
+      return interaction.reply('❌ Không tìm thấy cookie hợp lệ.');
     }
 
-    /* Button bấm link ──────────────────────────────────────────────────*/
-    if (i.isButton()) {
-      const p = i.customId.replace('platform_','');   // phone|pc|tv
-      const { rows } = await pool.query(
-        'SELECT id,url FROM links WHERE platform=$1 ORDER BY id LIMIT 1',
-        [p]
+    let count = 0;
+
+    for (const block of blocks) {
+      const cookie = '– Email:' + block.trim();
+
+      await pool.query(
+        'INSERT INTO cookies (cookie_text) VALUES ($1)',
+        [cookie]
       );
-      await i.deferUpdate();
-      if (!rows.length) {
-        await i.channel.send(`❌ Hết link cho ${meta(p).label}! Vui lòng admin upload thêm.`);
-        return;
-      }
-      const { id, url } = rows[0];
-      await pool.query('DELETE FROM links WHERE id=$1',[id]);
 
-      const embed = new EmbedBuilder()
-        .setTitle('Tạo Link Thành Công!')
-        .setDescription(`${meta(p).emoji} Thiết bị: ${meta(p).label}\n\n🔗 Link:\n${url}`);
-      const linkRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setLabel('Mở Link').setStyle(ButtonStyle.Link).setURL(url)
+      count++;
+    }
+
+    interaction.reply(`✅ Đã upload ${count} cookie thành công.`);
+  }
+
+  // ===============================
+  // START CONVERT
+  // ===============================
+  if (interaction.commandName === 'start') {
+
+    await interaction.deferReply();
+
+    const result = await pool.query(
+      'SELECT * FROM cookies ORDER BY id ASC LIMIT 1'
+    );
+
+    if (!result.rows.length) {
+      return interaction.editReply(
+        '❌ Hết link cookie netflix! Vui lòng chờ admin Tún Kịt upload thêm.'
       );
-      await i.channel.send({ embeds:[embed], components:[linkRow] });
-      return;
     }
-  } catch(err){
-    console.error(err);
-    if(i.isRepliable()) {
-      const msg = 'Có lỗi xảy ra.';
-      i.replied || i.deferred ? i.followUp({content:msg,ephemeral:true}) : i.reply({content:msg,ephemeral:true});
-    }
+
+    const cookie = result.rows[0];
+    const cookieText = cookie.cookie_text;
+
+    const python = spawn('python', ['convert_single.py', cookieText]);
+
+    let output = '';
+
+    python.stdout.on('data', data => {
+      output += data.toString();
+    });
+
+    python.on('close', async () => {
+      try {
+        const data = JSON.parse(output);
+
+        await pool.query(
+          'DELETE FROM cookies WHERE id = $1',
+          [cookie.id]
+        );
+
+        const message = `
+🎬 **NETFLIX FREE**
+
+📧 Email: ${data.email}
+📦 Plan: ${data.plan}
+
+📱 Mobile: ${data.mobile}
+💻 PC: ${data.pc}
+📺 TV: ${data.tv}
+        `;
+
+        interaction.editReply(message);
+
+      } catch (err) {
+        interaction.editReply('❌ Lỗi convert cookie.');
+      }
+    });
   }
 });
 
-/*──────────────────────────────────  Boot  ────────────────────────────────*/
-app.get('/',(_q,res)=>res.send('Bot alive'));
-app.listen(PORT,()=>console.log(`Web server cổng ${PORT}`));
-
-(async()=>{
-  await initDb();
-  await rest.put(
-    Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.GUILD_ID),
-    { body: commands }
-  );
-  await client.login(process.env.DISCORD_TOKEN);
-})();
+client.login(process.env.DISCORD_TOKEN);

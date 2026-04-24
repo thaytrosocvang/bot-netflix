@@ -1,0 +1,16 @@
+– Email: tiffwangdesign5@gmail.com
+– Verified: false
+– Profile: Genie
+– Plan: Standard
+– Next billing: 11 de mayo de 2026
+– Extra members: false
+– Country: US
+– Payments: 1 | CC (VISA 1692) - Hydra_x001
+
+.netflix.com	TRUE	/	FALSE	1801724995	nfvdid	BQFmAAEBEArYBaj3xsy73fZZCuEHx39giS8X0RslTR93eDFnjJCErqWjJkDTQlPUCpEH5VruwLTrrocH6bWdHHplVftJTqU2xvZlAWq9JoKVSaV33xgmmhxAjo58VozptjVN3FWgIoUm4K-IztZsb98-9j_PCqLb
+.netflix.com	TRUE	/	TRUE	1802504401	NetflixId	ct%3DBgjHlOvcAxLkA9WjuLO8XMsixwIGsICsXrBugW3ga0qWVjEGClZD7m8CALex9Ga9FKj7IwxRfAWLM44OZ5m8S05mvT0TbmHAbI4nOlz6Uta0Yvzr5NqZ4Uj6Pk3SlFl-cr-kk9PAzfmnBPkfLwvSgfIDuaQ5UNopEgvq3mua4Ry6ppg_hP7fXMvaeLn5EYKCdL8fp9wH9P6eWuKgwjcYeLrRqJ31iaoJt_TMdZuKf73ss7RkxmGZjxdoMHP0BRIkowP53UonnERUhYvjWlSZPw5kSHa6hs0hINAq4atGTh_Ym0rurSzRXwFhIHhgtLVIvdi1Q2gtKMoKiNfQFRkwhRA7L13c60Dmfhv7LCO2AOX830fUUfwANFRfxVpj2H_cvWQ0C5A5t8khmv_Leq1Mvk15OzMtiZ__IbAOwuDOwU-Q4k0NYkUtqp8LXDNdk7lz_x8LKuaTm_310Y2ZRqJiHUXYxPq2JJzQsbGDERl7oZ_cdQwNQRe1tEjC3JQYNFWz521cghG0wywBy7xfFpIg1MiNK-BT_uQAS-erzQafBHXgTJbQ6d1gf5saNx6SZo8mebG29tU0O48izSLNFfeHpefmqtqf-D-ZWj3CDaHKGZxfeku322DT-b0ExdKogHwUc_96PFA_G5hoH-c3-6cYBiIOCgyh9WJJQ0mRa5qeJ5Y.%26ch%3DAQEAEAABABR7RCO-edSnVyQzV_MntsYlF-qtXVzmKcY.%26v%3D3%26pg%3DT2OZPL6GLFCP5JIK53SZON3GMU
+.netflix.com	TRUE	/	TRUE	1779390932	gsid	70622eaa-45bb-4489-a40a-bb672171c938
+.netflix.com	TRUE	/	FALSE	1802531296	OptanonConsent	isGpcEnabled=0&datestamp=Fri+Feb+13+2026+10%3A08%3A16+GMT-0500+(Eastern+Standard+Time)&version=202601.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=86406530-a78a-4e63-9a04-de50b560e0c1&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1778771295	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1778771295	netflix-sans-normal-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1779390932	profilesNewSession	0

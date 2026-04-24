@@ -1,0 +1,13 @@
+.netflix.com	TRUE	/	TRUE	1778949652	gsid	dd740abb-1a16-4223-8076-131e1b7eba6f
+.netflix.com	TRUE	/	FALSE	1806385137	nfvdid	BQFmAAEBEGPuD3nVsXUzsgkSl-41U-Zg7DA0u4IIwkrAftEfgTxRLuUUhx0S9U_PuKpvF_XbOByTrrRQ1t4swPAvNKKop6R4QBxYWXZrGEOA-TmiCImRJD0EaZrHf2DkMPrtvLgKfXI_pFfo_oAvBZ19453JyfbQ
+.netflix.com	TRUE	/	TRUE	1806385212	NetflixId	v%3D3%26ct%3DBgjHlOvcAxLzAqFViuyXV2SVl6uZoWdFWbtRvtRcZboK6tXVlZxGmRQyGww7Y-IpYPU-1Wt_gokA73Ahodz8qCglWkyqXOjNnkJxpLC0mVJb8m5tcHKJ438TpsxE3spfhlmpskzrmJjqWaN1GVEHzlWJp5rT4XLA84Z0XwrSqqnuNpVAbiIn450NNXfXjKf8DnrdRrRiiHloTK9-6IJO_pmwRv8QtGIZT7hTyyhZJdJmAXvmfWywX81m3SS4BoQXvrozUxx2nX259jQn09u12PYYecoEpy88-cEZ0bAlEyOhIGEX4iHbf9G-1faw9HucFQ-XmsgLDuhcP_e8YN9clb_Pbf0lYlKEDiM2sGAk1VNqBmsf2mGPqrHPkXn9fnHfp18OTwEbvMU3Z2pOh9WG8Te_0s_kbu2uSsyC5X8OjO9K3wH-rukWpBNdjacZM6Fa8DG5_qXdJTgqp6zmqY1S_BZ0l1z7nylsHKFz7vMj91rvAfUgYtPDolx97N-_GAYiDgoMo9FqiIq3uiHKjRoO%26pg%3DAKLISVHK4RAUNGJEWPFRRPVF2Q%26ch%3DAQEAEAABABRLmPoz_MntL7i91_xjZsVaQmg9kXaGwfg.
+.netflix.com	TRUE	/	FALSE	1806385253	OptanonConsent	isGpcEnabled=0&datestamp=Mon+Mar+30+2026+12%3A40%3A53+GMT%2B0700+(Western+Indonesia+Time)&version=202602.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=6f975cfe-5f49-4933-b291-fa14d5216d71&interactionCount=1&isAnonUser=1&prevHadToken=0&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&crTime=1774849137848&AwaitingReconsent=false
+.netflix.com	TRUE	/	FALSE	1782625252	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1782625252	netflix-sans-normal-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1778949652	profilesNewSession	0– Email: ribkawidya14@gmail.com
+.netflix.com	TRUE	/	FALSE	1782880468	netfli–	Email: stephentodd7414@outlook.com
+.netflix.com	TRUE	/	FALSE	1778949661	dsca	true
+.netflix.com	TRUE	/	FALSE	1778949661	flwssn	3afc7b0d-70d3-423d-9823-9984f813d2df
+.netflix.com	TRUE	/	FALSE	1778949661	SecureNetflixId	v%3D3%26mac%3DAQEAEQABABTiR0jgwPZY_HVMUoQIqxcprLvJEdxtNzc.%26dt%3D1772635360721
+.netflix.com	TRUE	/	FALSE	1779134558	firstLolomoAfterOnRamp	true
+.netflix.com	TRUE	/	FALSE	1782077995	pas	%7B%22supplementals%22%3A%7B%22muted%22%3Atrue%7D%7D

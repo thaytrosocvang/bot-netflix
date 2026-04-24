@@ -1,0 +1,20 @@
+NETFLIX FREE :👇
+
+Name: Lee
+Email: lee067621@gmail.com
+Country: US
+Plan: Free
+Hold Status: No
+Email Verified: Yes
+Profiles (5): Lee, zee, Nana, Chris, Mamma
+
+--------------------------------------------------------------------------------------------------
+
+Checker By: github.com/harshitkamboj | Website: harshitkamboj.in
+Netflix COOKIE :👇
+
+.netflix.com	TRUE	/	FALSE	1798600751	nfvdid	BQFmAAEBEG-P9fopa1n-MLiKEbuSBNdgz3v0CG7phKpBSsaXuovYUQNjyIWNUchBPryHM6aIzzS-Xrt6yu6Ku1WPDENhuByLyG5ihc2iTJCobbEMj-EyVlZIfnTzinHaK0rsZkcmFuwyQCHE8PgKEsVxqzjg_vG6
+.netflix.com	TRUE	/	FALSE	1802240904	OptanonConsent	isGpcEnabled=0&datestamp=Tue+Feb+10+2026+00%3A28%3A24+GMT-0600+(Central+Standard+Time)&version=202512.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=8033014d-b44a-4321-bc7f-084c35dbee68&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&AwaitingReconsent=false
+.netflix.com	TRUE	/	TRUE	1802240903	NetflixId	ct%3DBgjHlOvcAxLpA_arbPEF5qnuU0VMtp2L5dNlK_GJ11cUJJi-ct_-VmHhgwdwmYM7tcoyNWvHcMCn7JDPtywuhv1PQAP-7KNdy9LoncYnh1SbCNLAIwObaUfMKbTCC3ki6emkiBHJSPGtSd1nbo5FbTMKZv7BYzvySp1rY5VRkA6Us3_ST6t3i-N-FCLFy3igkXU1dEGj_xaA75WDYNu_tsr1q4OtA50ZxLfTM5wTsLfb0e7bIQqQl94XrIqXOBhVoIfdqDhGrPwXcp1HToQFITQP2RN0-uPjDMHsN26ecADJJteF3FC4Zd153VbuYYn6JK6FSeHFC9ihZlWTXCSP-U0Q__9zCHx-czCMWtuze8kC72xqaVsD2GBQ-vbN4rXck5MBcK91UwXGhlf8y3xJ1CKt82_orYtjlhukra0Lsv43paTGr5i7XpBAVYgORESUKO8r6hvXWXE_IUayiWcjjT1o3UUspUQSD33JiCWISC9qSRcrRpOAkFUCuO7QO6Matsv96yxJAUpjNgPa-DdRJeTT9lDcCCtOxnXji6UXqa_eDV3KZKXZGmPrp5beo-e71RpkgXLvECWqFTWwAl8sNW10yIZuCGU8qIe7NaCaNNLoFi2GMCjuLPPDykX2EkjbvzA_jEVtZw9AjA_uGTL31S9EcBgGIg4KDLZ3cWLLAkICQ2YRzQ..%26ch%3DAQEAEAABABS-E633CKkNlHpwlohlyRzANoX9c2H8h1I.%26v%3D3%26pg%3DSHZWB2QXOFEBREU2MLA7MSUWUI
+.netflix.com	TRUE	/	FALSE	1778480904	netflix-sans-bold-3-loaded	true
+.netflix.com	TRUE	/	FALSE	1778480904	netflix-sans-normal-3-loaded	true
