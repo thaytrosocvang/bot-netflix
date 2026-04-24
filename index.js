@@ -373,8 +373,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (result.error) {
       console.error('[runConverter] error:', result.error, result.detail || '');
       await interaction.editReply(
-        `❌ Cookie không hợp lệ hoặc đã hết hạn. (${result.error})\n` +
-        `Cookie đã bị xóa. Vui lòng thử lại — còn **${await countCookies()}** cookie khác.`,
+        `🍪❌ Cookie bị lỗi, vui lòng bấm lại để nhận token mới — còn **${await countCookies()}** cookie khác.`,
       );
       return;
     }
