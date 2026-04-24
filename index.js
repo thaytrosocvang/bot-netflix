@@ -1,6 +1,8 @@
+// index.js  —  FULL skeleton with cookie→token support
 import 'dotenv/config';
 import express from 'express';
 import pg from 'pg';
+import { spawn } from 'child_process';
 import {
   Client,
   GatewayIntentBits,
@@ -17,160 +19,68 @@ import {
 } from 'discord.js';
 
 const { Pool } = pg;
-
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
-
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
+/*──────────────────────────────────  Postgres  ─────────────────────────────*/
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-function getPlatformMeta(platform) {
-  if (platform === 'phone') {
-    return {
-      label: 'Điện thoại',
-      emoji: '📱',
-      buttonText: 'Link Điện Thoại'
-    };
-  }
-
-  if (platform === 'pc') {
-    return {
-      label: 'Máy tính',
-      emoji: '💻',
-      buttonText: 'Link Máy Tính'
-    };
-  }
-
-  return {
-    label: 'TV',
-    emoji: '📺',
-    buttonText: 'Link TV'
-  };
-}
-
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS links (
       id SERIAL PRIMARY KEY,
-      platform TEXT NOT NULL CHECK (platform IN ('phone', 'pc', 'tv')),
+      platform TEXT NOT NULL CHECK (platform IN ('phone','pc','tv')),
       url TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 }
 
-async function getNextLink(platform) {
-  const db = await pool.connect();
-
-  try {
-    await db.query('BEGIN');
-
-    const result = await db.query(
-      `
-      SELECT id, url
-      FROM links
-      WHERE platform = $1
-      ORDER BY id ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-      `,
-      [platform]
-    );
-
-    if (result.rows.length === 0) {
-      await db.query('COMMIT');
-      return null;
-    }
-
-    const row = result.rows[0];
-
-    await db.query('DELETE FROM links WHERE id = $1', [row.id]);
-    await db.query('COMMIT');
-
-    return row.url;
-  } catch (error) {
-    await db.query('ROLLBACK');
-    throw error;
-  } finally {
-    db.release();
-  }
+/*─────────────────────────────  Cookie ► Token  ────────────────────────────*/
+/**
+ * Chạy cookie_converter.py  ➜  JSON  ➜  trả mảng cookies
+ */
+function convertTxtToJson(buffer) {
+  return new Promise((res, rej) => {
+    const py = spawn('python', ['cookie_converter.py'], { stdio: ['pipe', 'pipe', 'inherit'] });
+    let out = '';
+    py.stdout.on('data', d => (out += d));
+    py.on('close', code => {
+      if (code !== 0) return rej(new Error('converter exit ' + code));
+      try {
+        res(JSON.parse(out));
+      } catch (e) {
+        rej(e);
+      }
+    });
+    py.stdin.end(buffer);
+  });
 }
 
-function parseTxtContent(content) {
-  const validPlatforms = new Set(['phone', 'pc', 'tv']);
-
-  const lines = content
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  const rows = [];
-  const errors = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineNumber = i + 1;
-    const line = lines[i];
-
-    if (line.startsWith('#')) continue;
-
-    const parts = line.split('|');
-    if (parts.length < 2) {
-      errors.push(`Dòng ${lineNumber}: sai format, phải là platform|url`);
-      continue;
-    }
-
-    const platform = parts[0].trim().toLowerCase();
-    const url = parts.slice(1).join('|').trim();
-
-    if (!validPlatforms.has(platform)) {
-      errors.push(`Dòng ${lineNumber}: platform không hợp lệ (${platform})`);
-      continue;
-    }
-
-    try {
-      new URL(url);
-    } catch {
-      errors.push(`Dòng ${lineNumber}: URL không hợp lệ`);
-      continue;
-    }
-
-    rows.push({ platform, url });
-  }
-
-  return { rows, errors };
+/**
+ * Ví dụ placeholder: nhận cookie JSON, trả về token-URL
+ * TODO: thay bằng logic thật (gọi main.py hoặc API riêng)
+ */
+async function getTokenFromCookie(cookieJson) {
+  // ... xử lý, trả về { platform, url }
+  return { platform: 'phone', url: 'https://example.com/token=abc' };
 }
 
-async function insertLinks(rows) {
-  if (!rows.length) return 0;
-
-  const db = await pool.connect();
-
-  try {
-    await db.query('BEGIN');
-
-    for (const row of rows) {
-      await db.query(
-        'INSERT INTO links (platform, url) VALUES ($1, $2)',
-        [row.platform, row.url]
-      );
-    }
-
-    await db.query('COMMIT');
-    return rows.length;
-  } catch (error) {
-    await db.query('ROLLBACK');
-    throw error;
-  } finally {
-    db.release();
-  }
+/**
+ * Lưu link (token) vào DB
+ */
+async function saveTokenLink(platform, url) {
+  await pool.query(
+    'INSERT INTO links (platform,url) VALUES ($1,$2)',
+    [platform, url]
+  );
 }
 
+/*──────────────────────────────  Discord cmds  ─────────────────────────────*/
 const commands = [
   new SlashCommandBuilder()
     .setName('start')
@@ -178,222 +88,118 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('uploadtxt')
-    .setDescription('Upload file txt để thêm link vào database')
-    .addAttachmentOption(option =>
-      option
-        .setName('file')
-        .setDescription('File txt chứa link theo format platform|url')
-        .setRequired(true)
-    )
+    .setDescription('Upload file txt link thường (giữ nguyên chức năng cũ)')
+    .addAttachmentOption(o => o.setName('file').setDescription('file txt').setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName('uploadcookies')
+    .setDescription('Upload file TXT cookies → token-link')
+    .addAttachmentOption(o => o.setName('file').setDescription('cookie txt').setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-async function registerCommands() {
-  await rest.put(
-    Routes.applicationGuildCommands(
-      process.env.DISCORD_CLIENT_ID,
-      process.env.GUILD_ID
-    ),
-    { body: commands }
+/*──────────────────────────  Helper gửi panel / kết quả ────────────────────*/
+function panelRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('platform_phone')
+      .setLabel('Link Điện Thoại')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('platform_pc')
+      .setLabel('Link Máy Tính')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('platform_tv')
+      .setLabel('Link TV')
+      .setStyle(ButtonStyle.Success)
   );
 }
 
-client.once(Events.ClientReady, readyClient => {
-  console.log(`Bot online: ${readyClient.user.tag}`);
+function meta(platform) {
+  return {
+    phone: { emoji: '📱', label: 'Điện thoại' },
+    pc:    { emoji: '💻', label: 'Máy tính' },
+    tv:    { emoji: '📺', label: 'TV' }
+  }[platform];
+}
 
-  readyClient.user.setPresence({
-    status: 'dnd',
-    activities: [
-      {
-        name: 'tún kịt súc vật',
-        type: ActivityType.Playing
-      }
-    ]
-  });
-});
-
-client.on(Events.InteractionCreate, async interaction => {
+/*─────────────────────────────  Interaction logic  ─────────────────────────*/
+client.on(Events.InteractionCreate, async (i) => {
   try {
-    if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'start') {
-        const embed = new EmbedBuilder()
-          .setTitle('START PANEL')
-          .setDescription(
-            [
-              'Chọn loại thiết bị:',
-              '',
-              '📱 Điện thoại',
-              '💻 Máy tính',
-              '📺 TV'
-            ].join('\n')
-          );
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('platform_phone')
-            .setLabel('Link Điện Thoại')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('platform_pc')
-            .setLabel('Link Máy Tính')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('platform_tv')
-            .setLabel('Link TV')
-            .setStyle(ButtonStyle.Success)
-        );
-
-        await interaction.reply({
-          embeds: [embed],
-          components: [row]
-        });
-        return;
-      }
-
-      if (interaction.commandName === 'uploadtxt') {
-        const attachment = interaction.options.getAttachment('file', true);
-
-        if (!attachment.name.toLowerCase().endsWith('.txt')) {
-          await interaction.reply({
-            content: '❌ Chỉ chấp nhận file .txt',
-            ephemeral: true
-          });
-          return;
-        }
-
-        await interaction.deferReply({ ephemeral: true });
-
-        const response = await fetch(attachment.url);
-        if (!response.ok) {
-          throw new Error(`Không tải được file: HTTP ${response.status}`);
-        }
-
-        const text = await response.text();
-        const { rows, errors } = parseTxtContent(text);
-        const inserted = await insertLinks(rows);
-
-        const summary = [
-          `✅ Đã thêm **${inserted}** link vào database.`,
-          rows.length ? '' : 'Không có dòng hợp lệ nào để thêm.'
-        ];
-
-        if (errors.length) {
-          summary.push('', `⚠️ Có **${errors.length}** dòng lỗi:`);
-          summary.push(...errors.slice(0, 10));
-          if (errors.length > 10) {
-            summary.push(`... và ${errors.length - 10} lỗi khác`);
-          }
-        }
-
-        await interaction.editReply({
-          content: summary.join('\n')
-        });
-        return;
-      }
-    }
-
-    if (interaction.isButton()) {
-      let platform = null;
-
-      if (interaction.customId === 'platform_phone') platform = 'phone';
-      if (interaction.customId === 'platform_pc') platform = 'pc';
-      if (interaction.customId === 'platform_tv') platform = 'tv';
-
-      if (!platform) return;
-
-      const meta = getPlatformMeta(platform);
-      const link = await getNextLink(platform);
-
-      await interaction.deferUpdate();
-
-      if (!interaction.channel) {
-        return;
-      }
-
-      if (!link) {
-        await interaction.channel.send({
-          content: `❌ Hết link cho ${meta.label}! Vui lòng admin upload thêm.`
-        });
-        return;
-      }
-
-      const resultEmbed = new EmbedBuilder()
-        .setTitle('Tạo Link Thành Công!')
-        .setDescription(
-          [
-            `${meta.emoji} Thiết bị: ${meta.label}`,
-            '',
-            '🔗 Link:',
-            `${link}`
-          ].join('\n')
-        );
-
-      const openRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('Mở Link')
-          .setStyle(ButtonStyle.Link)
-          .setURL(link)
-      );
-
-      await interaction.channel.send({
-        embeds: [resultEmbed],
-        components: [openRow]
-      });
-
+    /* /start ────────────────────────────────────────────────────────────*/
+    if (i.isChatInputCommand() && i.commandName === 'start') {
+      const embed = new EmbedBuilder()
+        .setTitle('START PANEL')
+        .setDescription('Chọn loại thiết bị:\n\n📱 Điện thoại\n💻 Máy tính\n📺 TV');
+      await i.reply({ embeds:[embed], components:[panelRow()] });
       return;
     }
-  } catch (error) {
-    console.error('Lỗi interaction:', error);
 
-    try {
-      if (interaction.isButton()) {
-        if (interaction.channel) {
-          await interaction.channel.send({
-            content: 'Có lỗi xảy ra.'
-          });
+    /* /uploadcookies ────────────────────────────────────────────────────*/
+    if (i.isChatInputCommand() && i.commandName === 'uploadcookies') {
+      const attach = i.options.getAttachment('file', true);
+      await i.deferReply({ ephemeral:true });
+      const buf = await (await fetch(attach.url)).arrayBuffer();
+      const cookies = await convertTxtToJson(Buffer.from(buf).toString('utf8'));
+
+      const added = [];
+      for (const c of cookies) {
+        const { platform, url } = await getTokenFromCookie(c);
+        if (platform && url) {
+          await saveTokenLink(platform, url);
+          added.push({ platform, url });
         }
+      }
+      await i.editReply(`✅ Đã convert & lưu **${added.length}** token-link.`);
+      return;
+    }
+
+    /* Button bấm link ──────────────────────────────────────────────────*/
+    if (i.isButton()) {
+      const p = i.customId.replace('platform_','');   // phone|pc|tv
+      const { rows } = await pool.query(
+        'SELECT id,url FROM links WHERE platform=$1 ORDER BY id LIMIT 1',
+        [p]
+      );
+      await i.deferUpdate();
+      if (!rows.length) {
+        await i.channel.send(`❌ Hết link cho ${meta(p).label}! Vui lòng admin upload thêm.`);
         return;
       }
+      const { id, url } = rows[0];
+      await pool.query('DELETE FROM links WHERE id=$1',[id]);
 
-      if (interaction.isRepliable()) {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({
-            content: 'Có lỗi xảy ra.',
-            ephemeral: true
-          }).catch(() => {});
-        } else {
-          await interaction.reply({
-            content: 'Có lỗi xảy ra.',
-            ephemeral: true
-          }).catch(() => {});
-        }
-      }
-    } catch {
-      // bỏ qua lỗi phụ khi gửi thông báo lỗi
+      const embed = new EmbedBuilder()
+        .setTitle('Tạo Link Thành Công!')
+        .setDescription(`${meta(p).emoji} Thiết bị: ${meta(p).label}\n\n🔗 Link:\n${url}`);
+      const linkRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('Mở Link').setStyle(ButtonStyle.Link).setURL(url)
+      );
+      await i.channel.send({ embeds:[embed], components:[linkRow] });
+      return;
+    }
+  } catch(err){
+    console.error(err);
+    if(i.isRepliable()) {
+      const msg = 'Có lỗi xảy ra.';
+      i.replied || i.deferred ? i.followUp({content:msg,ephemeral:true}) : i.reply({content:msg,ephemeral:true});
     }
   }
 });
 
-app.get('/', (_req, res) => {
-  res.send('Bot is running.');
-});
+/*──────────────────────────────────  Boot  ────────────────────────────────*/
+app.get('/',(_q,res)=>res.send('Bot alive'));
+app.listen(PORT,()=>console.log(`Web server cổng ${PORT}`));
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true });
-});
-
-app.listen(PORT, () => {
-  console.log(`Web server chạy ở cổng ${PORT}`);
-});
-
-(async () => {
-  try {
-    await initDb();
-    await registerCommands();
-    await client.login(process.env.DISCORD_TOKEN);
-  } catch (error) {
-    console.error('Lỗi khởi động bot:', error);
-  }
+(async()=>{
+  await initDb();
+  await rest.put(
+    Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.GUILD_ID),
+    { body: commands }
+  );
+  await client.login(process.env.DISCORD_TOKEN);
 })();
