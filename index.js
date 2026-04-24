@@ -91,8 +91,8 @@ async function getNextLink(platform) {
     const row = result.rows[0];
 
     await db.query('DELETE FROM links WHERE id = $1', [row.id]);
-
     await db.query('COMMIT');
+
     return row.url;
   } catch (error) {
     await db.query('ROLLBACK');
@@ -104,6 +104,7 @@ async function getNextLink(platform) {
 
 function parseTxtContent(content) {
   const validPlatforms = new Set(['phone', 'pc', 'tv']);
+
   const lines = content
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -313,7 +314,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (!link) {
         await interaction.channel.send({
-          content: `❌ Hết link cho ${meta.label}!`
+          content: `❌ Hết link cho ${meta.label}! Vui lòng admin upload thêm.`
         });
         return;
       }
@@ -346,18 +347,31 @@ client.on(Events.InteractionCreate, async interaction => {
   } catch (error) {
     console.error('Lỗi interaction:', error);
 
-    if (interaction.isRepliable()) {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: 'Có lỗi xảy ra.',
-          ephemeral: true
-        }).catch(() => {});
-      } else {
-        await interaction.reply({
-          content: 'Có lỗi xảy ra.',
-          ephemeral: true
-        }).catch(() => {});
+    try {
+      if (interaction.isButton()) {
+        if (interaction.channel) {
+          await interaction.channel.send({
+            content: 'Có lỗi xảy ra.'
+          });
+        }
+        return;
       }
+
+      if (interaction.isRepliable()) {
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({
+            content: 'Có lỗi xảy ra.',
+            ephemeral: true
+          }).catch(() => {});
+        } else {
+          await interaction.reply({
+            content: 'Có lỗi xảy ra.',
+            ephemeral: true
+          }).catch(() => {});
+        }
+      }
+    } catch {
+      // bỏ qua lỗi phụ khi gửi thông báo lỗi
     }
   }
 });
