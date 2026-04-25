@@ -207,6 +207,10 @@ const commands = [
         .setDescription('File .txt chứa cookie Netflix (Netscape format)')
         .setRequired(true)
     ),
+
+  new SlashCommandBuilder()
+    .setName('clearcookie')
+    .setDescription('Xóa toàn bộ cookie trong kho (Admin only)'),
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -294,6 +298,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setFooter({ text: 'Bot by Sếp Tún Kịt' });
 
     await interaction.reply({ embeds: [embed], components: [row, rowGuide] });
+    return;
+  }
+
+  // ── /clearcookie ───────────────────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === 'clearcookie') {
+    if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
+      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      const before = await countCookies();
+      await pool.query('DELETE FROM cookie_queue');
+      await updateStatus();
+      await interaction.editReply(
+        `🗑️ Đã xóa toàn bộ **${before}** cookie khỏi kho!\n✅ Kho hiện tại: **0** cookie.`,
+      );
+    } catch (err) {
+      await interaction.editReply(`❌ Lỗi khi xóa cookie: ${err.message}`);
+      console.error('[clearcookie]', err);
+    }
     return;
   }
 
