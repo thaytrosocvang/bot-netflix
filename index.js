@@ -16,7 +16,6 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import pg from 'pg';
 import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer-core';
 
@@ -28,10 +27,8 @@ const DISCORD_TOKEN     = process.env.DISCORD_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const GUILD_ID          = process.env.GUILD_ID;
 const ADMIN_IDS         = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const DATABASE_URL      = process.env.DATABASE_URL;
 
 // ─── PYTHON BINARY ────────────────────────────────────────────────────────────
-// Ưu tiên dùng Python từ venv (Docker), fallback sang python3 / python
 const PYTHON_BIN = (() => {
   const candidates = [
     path.join(__dirname, 'venv', 'bin', 'python3'),
@@ -43,86 +40,93 @@ const PYTHON_BIN = (() => {
     if (p.startsWith('/') || p.startsWith('.')) {
       if (fs.existsSync(p)) return p;
     } else {
-      return p; // system PATH binary
+      return p;
     }
   }
   return 'python3';
 })();
 
-// ─── POSTGRESQL ───────────────────────────────────────────────────────────────
-const pool = new pg.Pool({
-  connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
+// ─── IN-MEMORY QUEUE ─────────────────────────────────────────────────────────
+// Mảng raw cookie strings, hoạt động như FIFO queue (không lưu DB)
+const cookieQueue = [];
 
-async function initDB() {
-  // Bảng lưu raw cookie (Netscape format) chờ xử lý
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS cookie_queue (
-      id         SERIAL PRIMARY KEY,
-      raw_cookie TEXT NOT NULL,
-      added_at   TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  console.log('✅ DB ready');
+function countCookies() {
+  return cookieQueue.length;
 }
 
-async function countCookies() {
-  const { rows } = await pool.query('SELECT COUNT(*) AS cnt FROM cookie_queue');
-  return parseInt(rows[0].cnt, 10);
+/** Lấy 1 cookie đầu hàng và xóa khỏi queue */
+function popCookie() {
+  if (cookieQueue.length === 0) return null;
+  return cookieQueue.shift();
 }
 
-/** Lấy 1 cookie đầu hàng rồi xoá luôn (atomic) */
-async function popCookie() {
-  const { rows } = await pool.query(`
-    DELETE FROM cookie_queue
-    WHERE id = (SELECT id FROM cookie_queue ORDER BY id ASC LIMIT 1)
-    RETURNING *
-  `);
-  return rows[0] || null;
-}
-
-/** Lưu danh sách raw cookie blocks vào DB */
-async function pushCookies(blocks) {
+/** Thêm mảng cookie blocks vào cuối queue */
+function pushCookies(blocks) {
   if (!blocks.length) return 0;
-  const values = blocks.map((_, i) => `($${i + 1})`).join(', ');
-  const params = blocks;
-  await pool.query(
-    `INSERT INTO cookie_queue (raw_cookie) VALUES ${values}`,
-    params,
-  );
+  cookieQueue.push(...blocks);
   return blocks.length;
 }
 
-// ─── PARSER: tách file cookie thô thành từng block ───────────────────────────
+/** Xóa toàn bộ queue */
+function clearCookies() {
+  const count = cookieQueue.length;
+  cookieQueue.length = 0;
+  return count;
+}
+
+// ─── AUTO-REFILL GUARD ────────────────────────────────────────────────────────
+// Tránh nhiều request đồng thời cùng trigger scrape
+let isRefilling = false;
+
 /**
- * File cookie upload (image 2 format) có dạng:
- *   - Email: xxx
- *   - Plan: xxx
- *   ...
- *   .netflix.com  TRUE  /  TRUE  timestamp  NetflixId  xxx
- *   .netflix.com  TRUE  /  TRUE  timestamp  gsid  xxx
- *   ...
- *   (dòng trống)
- *   - Email: ...  (block tiếp theo)
- *
- * Hàm này trích xuất từng nhóm dòng .netflix.com liên tiếp thành 1 block.
- * Mỗi block = raw cookie của 1 tài khoản (Netscape format).
+ * Tự động scrape shrestha.live để nạp lại queue.
+ * Trả về số cookie đã thêm, hoặc 0 nếu thất bại / đang refill.
  */
+async function autoRefill() {
+  if (isRefilling) return 0;
+  isRefilling = true;
+  try {
+    console.log('[autoRefill] Queue rỗng — tự động scrape shrestha.live...');
+    const rawTexts = await scrapeShrestha(null);
+
+    if (!rawTexts.length) {
+      console.log('[autoRefill] Không lấy được cookie nào.');
+      return 0;
+    }
+
+    const blocks = [];
+    for (const text of rawTexts) {
+      const parsed = parseCookieFileIntoBlocks(text);
+      if (parsed.length > 0) {
+        blocks.push(...parsed);
+      } else if (text.includes('NetflixId') || text.includes('SecureNetflixId')) {
+        blocks.push(text.trim());
+      }
+    }
+
+    const added = pushCookies(blocks);
+    console.log(`[autoRefill] Đã nạp thêm ${added} cookie vào queue.`);
+    return added;
+  } catch (err) {
+    console.error('[autoRefill] Lỗi:', err.message);
+    return 0;
+  } finally {
+    isRefilling = false;
+  }
+}
+
+// ─── PARSER: tách file cookie thô thành từng block ───────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
   const blocks = [];
   const lines  = rawText.split(/\r?\n/);
-
   let currentLines = [];
 
   for (const line of lines) {
     const t = line.trim();
-
     if (t.startsWith('.netflix.com') || t.startsWith('netflix.com')) {
       currentLines.push(line);
     } else {
       if (currentLines.length > 0) {
-        // Kết thúc 1 block cookie — kiểm tra có đủ NetflixId không
         const block = currentLines.join('\n');
         if (/NetflixId/i.test(block) || /SecureNetflixId/i.test(block)) {
           blocks.push(block);
@@ -132,7 +136,6 @@ function parseCookieFileIntoBlocks(rawText) {
     }
   }
 
-  // Flush block cuối
   if (currentLines.length > 0) {
     const block = currentLines.join('\n');
     if (/NetflixId/i.test(block) || /SecureNetflixId/i.test(block)) {
@@ -144,17 +147,10 @@ function parseCookieFileIntoBlocks(rawText) {
 }
 
 // ─── CONVERTER: gọi convert_single.py ────────────────────────────────────────
-/**
- * Truyền raw cookie text vào convert_single.py qua stdin.
- * Trả về { email, plan, country, pc_link, phone_link } hoặc { error }.
- */
 function runConverter(rawCookie) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const scriptPath = path.join(__dirname, 'convert_single.py');
-
-    const child = spawn(PYTHON_BIN, [scriptPath], {
-      cwd: __dirname,
-    });
+    const child = spawn(PYTHON_BIN, [scriptPath], { cwd: __dirname });
 
     let stdout = '';
     let stderr = '';
@@ -179,7 +175,6 @@ function runConverter(rawCookie) {
       resolve({ error: `Không thể chạy Python: ${err.message}` });
     });
 
-    // Ghi cookie vào stdin rồi đóng
     child.stdin.write(rawCookie);
     child.stdin.end();
   });
@@ -221,7 +216,6 @@ async function scrapeShrestha(country = null) {
           },
         });
       } catch {}
-      // Fallback: bắt execCommand copy
       const _exec = document.execCommand.bind(document);
       document.execCommand = function(cmd, ...a) {
         if (cmd === 'copy') {
@@ -248,13 +242,11 @@ async function scrapeShrestha(country = null) {
       } catch {}
     });
 
-    // Load trang — KHÔNG dùng setRequestInterception để tránh block JS
     await page.goto('https://www.shrestha.live/', {
       waitUntil: 'domcontentloaded',
       timeout: 45000,
     });
 
-    // Chờ JS render xong
     await sleep(6000);
 
     // Tìm kiếm quốc gia nếu có
@@ -283,7 +275,6 @@ async function scrapeShrestha(country = null) {
 
       if (typed) {
         await sleep(2000);
-        // Click kết quả đầu tiên trong dropdown
         const resultClicked = await page.evaluate((c) => {
           const allEls = [...document.querySelectorAll('li, [class*="item"], [class*="result"], [class*="option"], [class*="country"]')];
           for (const el of allEls) {
@@ -301,10 +292,9 @@ async function scrapeShrestha(country = null) {
       }
     }
 
-    // Đợi thêm cho cookie cards load
     await sleep(2000);
 
-    // Bấm TẤT CẢ nút COPY — nhiều cách tìm khác nhau
+    // Bấm TẤT CẢ nút COPY
     const clickedCount = await page.evaluate(() => {
       let n = 0;
       const allEls = document.querySelectorAll(
@@ -322,15 +312,13 @@ async function scrapeShrestha(country = null) {
     console.log(`[scrapeShrestha] Clicked ${clickedCount} COPY buttons`);
     await sleep(800 + clickedCount * 150);
 
-    // Lấy clipboard
     const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
     console.log(`[scrapeShrestha] Clipboard captured: ${copiedTexts.length} items`);
 
-    // Fallback: quét toàn bộ DOM tìm text có .netflix.com
+    // Fallback: quét DOM
     const domTexts = await page.evaluate(() => {
       const found = new Set();
 
-      // Tìm trong các element lá (không có children)
       document.querySelectorAll('*').forEach(el => {
         if (el.children.length > 0) return;
         const t = (el.textContent || el.innerText || '').trim();
@@ -340,7 +328,6 @@ async function scrapeShrestha(country = null) {
         }
       });
 
-      // Tìm trong pre / textarea / code
       document.querySelectorAll('pre, textarea, code').forEach(el => {
         const t = (el.value || el.textContent || el.innerText || '').trim();
         if (t.includes('.netflix.com') &&
@@ -349,7 +336,6 @@ async function scrapeShrestha(country = null) {
         }
       });
 
-      // Fallback: tách body text theo dòng trống
       const bodyText = document.body.innerText || '';
       bodyText.split(/\n{2,}/).forEach(block => {
         if (block.includes('.netflix.com') &&
@@ -363,7 +349,6 @@ async function scrapeShrestha(country = null) {
 
     console.log(`[scrapeShrestha] DOM texts: ${domTexts.length}, API blocks: ${apiBlocks.length}`);
 
-    // Gộp tất cả sources
     const all = [...new Set([...copiedTexts, ...domTexts, ...apiBlocks])];
     return all.filter(t => t && (t.includes('NetflixId') || t.includes('SecureNetflixId')));
 
@@ -389,7 +374,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('upcookie')
-    .setDescription('Upload file cookie thô cho bot (Admin only)')
+    .setDescription('Upload file cookie thô vào bộ nhớ (Admin only)')
     .addAttachmentOption(opt =>
       opt.setName('file')
         .setDescription('File .txt chứa cookie Netflix (Netscape format)')
@@ -398,16 +383,20 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('clearcookie')
-    .setDescription('Xóa toàn bộ cookie trong kho (Admin only)'),
+    .setDescription('Xóa toàn bộ cookie trong bộ nhớ (Admin only)'),
 
   new SlashCommandBuilder()
     .setName('fetchcookie')
-    .setDescription('Tự động lấy cookie từ shrestha.live (Admin only)')
+    .setDescription('Tự động lấy cookie từ shrestha.live vào bộ nhớ (Admin only)')
     .addStringOption(opt =>
       opt.setName('country')
-        .setDescription('Tên quốc gia (ví dụ: France, Brazil, US) — bỏ trống = lấy tất cả đang hiển thị')
+        .setDescription('Tên quốc gia (ví dụ: France, Brazil) — bỏ trống = lấy tất cả')
         .setRequired(false)
     ),
+
+  new SlashCommandBuilder()
+    .setName('status')
+    .setDescription('Xem số cookie hiện còn trong bộ nhớ'),
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -433,12 +422,12 @@ function planToEmoji(plan = '') {
   return '🎬';
 }
 
-async function updateStatus() {
-  const count = await countCookies();
-  client.user.setPresence({
+function updateStatus() {
+  const count = countCookies();
+  client.user?.setPresence({
     status: 'idle',
     activities: [{
-      name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
+      name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '⏳ Tự động nạp khi cần',
       type: ActivityType.Watching,
     }],
   });
@@ -448,9 +437,9 @@ async function updateStatus() {
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online: ${c.user.tag}`);
   console.log(`🐍 Python binary: ${PYTHON_BIN}`);
-  await initDB();
+  console.log('💾 Chế độ: IN-MEMORY queue (không dùng DB)');
   await registerCommands();
-  await updateStatus();
+  updateStatus();
 });
 
 // ─── INTERACTION HANDLER ──────────────────────────────────────────────────────
@@ -458,7 +447,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── /start ─────────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'start') {
-    const count = await countCookies();
+    const count = countCookies();
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -489,12 +478,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         '**Chọn loại link bạn muốn tạo:**\n\n' +
         '📱 **Điện Thoại** – Tối ưu cho mobile\n' +
         '🖥️ **Máy Tính** – Tối ưu cho desktop\n\n' +
-        `> 🗂️ Còn **${count}** cookie trong kho\n\n` +
+        (count > 0
+          ? `> 🗂️ Còn **${count}** cookie sẵn sàng\n\n`
+          : `> ⚡ Sẽ tự động lấy cookie khi bạn bấm nút\n\n`
+        ) +
         '> ⚠️ Nếu acc không xem được pls log out và đổi qua acc khác, ping admin nếu có thắc mắc',
       )
       .setFooter({ text: 'Bot by Sếp Tún Kịt' });
 
     await interaction.reply({ embeds: [embed], components: [row, rowGuide] });
+    return;
+  }
+
+  // ── /status ────────────────────────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === 'status') {
+    const count = countCookies();
+    await interaction.reply({
+      content: count > 0
+        ? `🗂️ Hiện có **${count}** cookie trong bộ nhớ, sẵn sàng phát.`
+        : `📭 Queue đang trống — bot sẽ tự scrape shrestha.live khi user bấm nút.`,
+      ephemeral: true,
+    });
     return;
   }
 
@@ -505,19 +509,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
-
-    try {
-      const before = await countCookies();
-      await pool.query('DELETE FROM cookie_queue');
-      await updateStatus();
-      await interaction.editReply(
-        `🗑️ Đã xóa toàn bộ **${before}** cookie khỏi kho!\n✅ Kho hiện tại: **0** cookie.`,
-      );
-    } catch (err) {
-      await interaction.editReply(`❌ Lỗi khi xóa cookie: ${err.message}`);
-      console.error('[clearcookie]', err);
-    }
+    const removed = clearCookies();
+    updateStatus();
+    await interaction.reply({
+      content: `🗑️ Đã xóa **${removed}** cookie khỏi bộ nhớ. Queue hiện tại: **0**.`,
+      ephemeral: true,
+    });
     return;
   }
 
@@ -547,14 +544,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      // Parse từng text thành cookie blocks (mỗi text có thể là 1 block hoặc nhiều blocks)
       const blocks = [];
       for (const text of rawTexts) {
         const parsed = parseCookieFileIntoBlocks(text);
         if (parsed.length > 0) {
           blocks.push(...parsed);
         } else if (text.includes('NetflixId') || text.includes('SecureNetflixId')) {
-          // Text đã là 1 block hoàn chỉnh
           blocks.push(text.trim());
         }
       }
@@ -564,13 +559,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      const saved = await pushCookies(blocks);
-      await updateStatus();
-      const total = await countCookies();
+      const saved = pushCookies(blocks);
+      updateStatus();
 
       await interaction.editReply(
-        `✅ Đã lấy và lưu **${saved}** cookie từ shrestha.live${country ? ` (${country})` : ''}.\n` +
-        `🗂️ Tổng kho hiện tại: **${total}** cookie.`
+        `✅ Đã nạp **${saved}** cookie vào bộ nhớ${country ? ` (${country})` : ''}.\n` +
+        `🗂️ Tổng hiện tại: **${countCookies()}** cookie.`
       );
     } catch (err) {
       console.error('[fetchcookie]', err);
@@ -609,11 +603,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      const saved = await pushCookies(blocks);
-      await updateStatus();
-      const total = await countCookies();
+      const saved = pushCookies(blocks);
+      updateStatus();
       await interaction.editReply(
-        `✅ Đã thêm **${saved}** cookie vào hàng đợi.\n🗂️ Tổng hiện tại: **${total}** cookie.`,
+        `✅ Đã thêm **${saved}** cookie vào bộ nhớ.\n🗂️ Tổng hiện tại: **${countCookies()}** cookie.`,
       );
     } catch (err) {
       await interaction.editReply(`❌ Lỗi: ${err.message}`);
@@ -629,36 +622,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const mode = interaction.customId === 'btn_phone' ? 'phone' : 'pc';
     await interaction.deferReply();
 
-    // Kiểm tra còn cookie không
-    const count = await countCookies();
-    if (count === 0) {
-      await interaction.editReply(
-        '❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.',
-      );
+    // Nếu queue rỗng → tự động scrape shrestha.live
+    if (countCookies() === 0) {
+      await interaction.editReply('⏳ Kho trống — đang tự động lấy cookie từ shrestha.live...');
+
+      const added = await autoRefill();
+
+      if (added === 0) {
+        await interaction.editReply(
+          '❌ Không lấy được cookie từ shrestha.live.\n' +
+          'Vui lòng thử lại sau hoặc ping admin **Tún Kịt** để upload thủ công.',
+        );
+        return;
+      }
+
+      await interaction.editReply(`✅ Đã nạp **${added}** cookie — đang tạo link của bạn...`);
+    } else {
+      await interaction.editReply('⏳ Đang tạo link NFToken, vui lòng chờ...');
+    }
+
+    // Pop 1 cookie từ memory queue
+    const rawCookie = popCookie();
+    if (!rawCookie) {
+      await interaction.editReply('❌ Hết cookie! Vui lòng thử lại.');
       return;
     }
 
-    // Pop 1 cookie — sẽ bị xóa khỏi DB ngay lập tức
-    const entry = await popCookie();
-    if (!entry) {
-      await interaction.editReply(
-        '❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.',
-      );
-      return;
-    }
-
-    // Thông báo đang xử lý
-    await interaction.editReply('⏳ Đang tạo link NFToken, vui lòng chờ...');
+    updateStatus();
 
     // Chạy checker Python
-    const result = await runConverter(entry.raw_cookie);
-    await updateStatus();
+    const result = await runConverter(rawCookie);
 
-    // Xử lý lỗi từ checker
     if (result.error) {
       console.error('[runConverter] error:', result.error, result.detail || '');
       await interaction.editReply(
-        `🍪❌ Cookie bị lỗi, vui lòng bấm lại để nhận token mới — còn **${await countCookies()}** cookie khác.`,
+        `🍪❌ Cookie bị lỗi, vui lòng bấm lại để nhận token mới — còn **${countCookies()}** cookie khác.`,
       );
       return;
     }
@@ -674,7 +672,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         { name: '🌍 Country',                             value: result.country || '??',           inline: true },
         {
           name:  mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính',
-          value: link,
+          value: link || '(không có link)',
         },
       )
       .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
