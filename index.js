@@ -233,119 +233,17 @@ const HTTP_HEADERS = {
   'Referer': 'https://www.shrestha.live/',
 };
 
-// ─── TẦNG 1: DIRECT API ───────────────────────────────────────────────────────
-async function scrapeViaAPI(country) {
-  const apiPaths = [
-    '/api/cookies',
-    '/api/netflix',
-    '/api/netflix-cookies',
-    '/api/get-cookies',
-    '/api/accounts',
-    '/api/data',
-    '/cookies.json',
-    '/data/netflix.json',
-    '/api/cookie',
-    '/api/free',
-    '/api/free-cookies',
-    '/api/list',
-  ];
-  const base = 'https://www.shrestha.live';
+// ─── TẦNG 1 & 2: BỎ QUA (site là React SPA — axios không lấy được data) ──────
+async function scrapeViaAPI(_country) { return []; }
+async function scrapeViaHTML(_country) { return []; }
 
-  for (const p of apiPaths) {
-    try {
-      const url = country ? `${base}${p}?country=${encodeURIComponent(country)}` : `${base}${p}`;
-      const res = await axios.get(url, { headers: HTTP_HEADERS, timeout: 15_000 });
-      const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-      if (looksLikeNetflixData(text)) {
-        console.log(`[Tầng 1] Hit: ${p}`);
-        return [text];
-      }
-    } catch { /* thử path tiếp theo */ }
-  }
-  return [];
-}
-
-// ─── TẦNG 2: HTML PARSE ───────────────────────────────────────────────────────
-async function scrapeViaHTML(country) {
-  const urls = [
-    country
-      ? `https://www.shrestha.live/?country=${encodeURIComponent(country)}`
-      : 'https://www.shrestha.live/',
-    'https://www.shrestha.live/netflix',
-    'https://www.shrestha.live/cookies',
-    'https://www.shrestha.live/free',
-  ];
-
-  const found = new Set();
-
-  for (const url of urls) {
-    try {
-      const res  = await axios.get(url, { headers: HTTP_HEADERS, timeout: 20_000 });
-      const html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-
-      // a) __NEXT_DATA__ / __NUXT_DATA__ (SSR inline JSON)
-      for (const re of [
-        /<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i,
-        /<script[^>]+id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i,
-        /<script[^>]*>([\s\S]*?netflix[\s\S]*?)<\/script>/gi,
-      ]) {
-        const ssrMatch = re.exec(html);
-        if (ssrMatch && looksLikeNetflixData(ssrMatch[1])) {
-          found.add(ssrMatch[1]);
-        }
-      }
-
-      // b) Đoạn text có .netflix.com trong source HTML — mở rộng pattern
-      const chunks = html.match(/\.netflix\.com[\s\S]{0,3000}?(?=\.netflix\.com|<\/(?:script|div|pre|textarea|code)|$)/g) || [];
-      for (const chunk of chunks) {
-        if (looksLikeNetflixData(chunk)) found.add(chunk);
-      }
-
-      // c) Các element textarea, pre, code chứa cookie
-      const elementMatches = html.match(/<(?:textarea|pre|code)[^>]*>([\s\S]*?)<\/(?:textarea|pre|code)>/gi) || [];
-      for (const el of elementMatches) {
-        const inner = el.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-        if (looksLikeNetflixData(inner)) found.add(inner);
-      }
-
-      // d) Tìm /api/... refs trong source rồi gọi thêm
-      const apiRefs = [...new Set([...html.matchAll(/['"`](\/api\/[^'"`\s?#]+)/g)].map(m => m[1]))];
-      for (const ref of apiRefs.slice(0, 15)) {
-        try {
-          const apiRes = await axios.get(`https://www.shrestha.live${ref}`, { headers: HTTP_HEADERS, timeout: 10_000 });
-          const text = typeof apiRes.data === 'string' ? apiRes.data : JSON.stringify(apiRes.data);
-          if (looksLikeNetflixData(text)) {
-            console.log(`[Tầng 2] API ref hit: ${ref}`);
-            found.add(text);
-          }
-        } catch { /* bỏ qua */ }
-      }
-
-      // e) Tìm window.__data__ / props / pageProps JSON
-      const dataMatches = [
-        ...html.matchAll(/window\.__(?:data|props|state|cookies|INITIAL_DATA)__\s*=\s*(\{[\s\S]*?\});/gi),
-        ...html.matchAll(/(?:pageProps|initialProps|serverData)\s*[=:]\s*(\{[\s\S]*?netflix[\s\S]*?\});/gi),
-      ];
-      for (const m of dataMatches) {
-        if (looksLikeNetflixData(m[1])) found.add(m[1]);
-      }
-
-    } catch (err) {
-      console.log(`[Tầng 2] Lỗi ${url}: ${err.message}`);
-    }
-  }
-
-  console.log(`[Tầng 2] ${found.size} candidate(s)`);
-  return [...found].filter(t => looksLikeNetflixData(t));
-}
-
-// ─── TẦNG 3: PUPPETEER ───────────────────────────────────────────────────────
+// ─── TẦNG 3: PUPPETEER (chờ React render xong) ───────────────────────────────
 async function scrapeViaPuppeteer(country) {
   let puppeteer;
   try {
     puppeteer = (await import('puppeteer-core')).default;
   } catch {
-    throw new Error('puppeteer-core chưa cài');
+    throw new Error('puppeteer-core chưa cài. Chạy: npm install puppeteer-core');
   }
 
   const chromiumPaths = [
@@ -357,28 +255,41 @@ async function scrapeViaPuppeteer(country) {
   ].filter(Boolean);
 
   const execPath = chromiumPaths.find(p => fs.existsSync(p));
-  if (!execPath) throw new Error('Chromium không tìm thấy.');
+  if (!execPath) throw new Error(
+    'Chromium không tìm thấy.\n' +
+    '  • Ubuntu/Debian: sudo apt install chromium-browser\n' +
+    '  • Hoặc đặt PUPPETEER_EXECUTABLE_PATH=/path/to/chromium trong .env'
+  );
 
   const browser = await puppeteer.launch({
     executablePath: execPath,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote'],
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote'],
     headless: 'new',
   });
 
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    const apiBlocks = [];
+    // ── Bắt XHR/fetch responses trước khi navigate ────────────────────────
+    const networkTexts = [];
     page.on('response', async (response) => {
       try {
-        const ct = response.headers()['content-type'] || '';
+        const url = response.url();
+        const ct  = response.headers()['content-type'] || '';
         if (!ct.includes('json') && !ct.includes('text')) return;
+        // Chỉ quan tâm response từ chính shrestha.live
+        if (!url.includes('shrestha')) return;
         const text = await response.text();
-        if (looksLikeNetflixData(text)) apiBlocks.push(text);
+        if (looksLikeNetflixData(text)) {
+          console.log(`[Tầng 3 Network] Hit: ${url}`);
+          networkTexts.push(text);
+        }
       } catch {}
     });
 
+    // ── Hook clipboard ────────────────────────────────────────────────────
     await page.evaluateOnNewDocument(() => {
       window.__copiedTexts = [];
       try {
@@ -386,85 +297,127 @@ async function scrapeViaPuppeteer(country) {
           configurable: true,
           value: {
             writeText: (t) => { window.__copiedTexts.push(t); return Promise.resolve(); },
-            readText: () => Promise.resolve(''),
+            readText:  () => Promise.resolve(''),
           },
         });
       } catch {}
       const _exec = document.execCommand.bind(document);
       document.execCommand = function(cmd, ...a) {
-        if (cmd === 'copy') { const s = window.getSelection(); if (s) window.__copiedTexts.push(s.toString()); }
+        if (cmd === 'copy') {
+          const s = window.getSelection();
+          if (s && s.toString()) window.__copiedTexts.push(s.toString());
+        }
         return _exec(cmd, ...a);
       };
     });
 
+    // ── Navigate & chờ React render ───────────────────────────────────────
     const targetUrl = country
       ? `https://www.shrestha.live/?country=${encodeURIComponent(country)}`
       : 'https://www.shrestha.live/';
 
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await sleep(6000);
+    console.log(`[Tầng 3] Navigating to ${targetUrl}`);
+    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60_000 });
 
+    // Chờ React render: đợi #root có children thực sự
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('#root')?.children?.length > 0 &&
+              document.body.innerText.trim().length > 100,
+        { timeout: 20_000 }
+      );
+    } catch {
+      console.log('[Tầng 3] waitForFunction timeout — tiếp tục...');
+    }
+
+    await sleep(3000); // thêm buffer cho lazy-load
+
+    // ── Nếu có country filter ─────────────────────────────────────────────
     if (country) {
-      for (const sel of ['input[placeholder*="SEARCH"]','input[placeholder*="search"]','input[type="text"]','input[type="search"]']) {
+      for (const sel of [
+        'input[placeholder*="SEARCH"]', 'input[placeholder*="search"]',
+        'input[placeholder*="country"]', 'input[type="text"]', 'input[type="search"]',
+      ]) {
         try {
           const el = await page.$(sel);
           if (el) {
             await el.click({ clickCount: 3 });
             await el.type(country, { delay: 80 });
-            await sleep(2000);
-            const clicked = await page.evaluate(c => {
-              for (const el of document.querySelectorAll('li,[class*="item"],[class*="result"],[class*="option"]')) {
-                if ((el.textContent||'').trim().toUpperCase().includes(c.toUpperCase())) { el.click(); return true; }
-              }
-              return false;
-            }, country);
-            if (!clicked) await page.keyboard.press('Enter');
-            await sleep(3000);
+            await sleep(1500);
+            await page.keyboard.press('Enter');
+            await sleep(2500);
             break;
           }
         } catch {}
       }
     }
 
-    await sleep(2000);
+    // ── Scroll xuống để trigger lazy-load ────────────────────────────────
+    await page.evaluate(async () => {
+      for (let i = 0; i < 5; i++) {
+        window.scrollBy(0, window.innerHeight);
+        await new Promise(r => setTimeout(r, 600));
+      }
+    });
+    await sleep(1500);
 
-    // Click tất cả nút có vẻ là copy
-    const n = await page.evaluate(() => {
+    // ── Click tất cả nút Copy ─────────────────────────────────────────────
+    const copyCount = await page.evaluate(() => {
       let n = 0;
-      document.querySelectorAll('button,[role="button"],[class*="copy"],[class*="Copy"],span,div,a').forEach(el => {
-        const t = (el.textContent||el.value||'').trim().toUpperCase();
-        if (t === 'COPY' || t === '📋 COPY' || t === 'COPY COOKIE' || t === 'GET COOKIE' || t === 'DOWNLOAD') {
+      const keywords = ['COPY','COPY COOKIE','GET COOKIE','📋 COPY','COPY ALL'];
+      document.querySelectorAll('button,[role="button"],[class*="copy"],[class*="Copy"]').forEach(el => {
+        const t = (el.textContent || '').trim().toUpperCase();
+        if (keywords.some(k => t.includes(k))) {
           try { el.click(); n++; } catch {}
         }
       });
       return n;
     });
+    console.log(`[Tầng 3] Clicked ${copyCount} copy button(s)`);
+    await sleep(1000 + copyCount * 200);
 
-    await sleep(800 + n * 150);
+    // ── Thu thập clipboard ────────────────────────────────────────────────
     const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
 
+    // ── Thu thập DOM text ─────────────────────────────────────────────────
     const domTexts = await page.evaluate(() => {
       const found = new Set();
-      // Tìm trong leaf nodes
+
+      // pre / textarea / code / input[type=text]
+      document.querySelectorAll('pre, textarea, code, input[type="text"]').forEach(el => {
+        const t = (el.value || el.textContent || '').trim();
+        if (t.length > 50 && t.includes('netflix.com')) found.add(t);
+      });
+
+      // Leaf nodes có netflix.com
       document.querySelectorAll('*').forEach(el => {
         if (el.children.length > 0) return;
-        const t = (el.textContent||'').trim();
-        if (t.length > 30 && t.includes('netflix.com')) found.add(t);
+        const t = (el.textContent || '').trim();
+        if (t.length > 80 && t.includes('netflix.com')) found.add(t);
       });
-      // pre/textarea/code elements
-      document.querySelectorAll('pre,textarea,code').forEach(el => {
-        const t = (el.value||el.textContent||'').trim();
-        if (t.includes('netflix.com')) found.add(t);
-      });
-      // body text paragraphs
-      (document.body.innerText||'').split(/\n{2,}/).forEach(b => {
-        if (b.includes('netflix.com')) found.add(b.trim());
-      });
+
+      // Tách theo double-newline từ body text
+      const bodyLines = (document.body.innerText || '').split(/\n{2,}/);
+      for (const b of bodyLines) {
+        if (b.trim().length > 50 && b.includes('netflix.com')) found.add(b.trim());
+      }
+
       return [...found];
     });
 
-    console.log(`[Tầng 3] clipboard=${copiedTexts.length} dom=${domTexts.length} api=${apiBlocks.length}`);
-    return [...new Set([...copiedTexts, ...domTexts, ...apiBlocks])].filter(t => t && looksLikeNetflixData(t));
+    // ── Log cấu trúc trang để debug ───────────────────────────────────────
+    const pageSnapshot = await page.evaluate(() => ({
+      title:        document.title,
+      bodyLength:   document.body.innerText.length,
+      hasNetflix:   document.body.innerText.includes('netflix'),
+      rootChildren: document.querySelector('#root')?.children?.length ?? 0,
+      snippetInner: document.body.innerText.slice(0, 300),
+    }));
+    console.log('[Tầng 3 Snapshot]', JSON.stringify(pageSnapshot));
+
+    const all = [...new Set([...copiedTexts, ...domTexts, ...networkTexts])];
+    console.log(`[Tầng 3] clipboard=${copiedTexts.length} dom=${domTexts.length} network=${networkTexts.length}`);
+    return all.filter(t => t && looksLikeNetflixData(t));
 
   } finally {
     await browser.close();
@@ -510,32 +463,104 @@ async function scrapeShrestha(country = null) {
 
 // ─── DEBUG: Xem raw HTML shrestha.live ───────────────────────────────────────
 async function debugFetchShrestha() {
+  // Site là React SPA — cần Puppeteer để xem DOM thật sau khi render
+  let puppeteer;
+  try { puppeteer = (await import('puppeteer-core')).default; }
+  catch { return { error: 'puppeteer-core chưa cài. Chạy: npm install puppeteer-core' }; }
+
+  const chromiumPaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/chromium', '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+  ].filter(Boolean);
+  const execPath = chromiumPaths.find(p => fs.existsSync(p));
+  if (!execPath) return { error: 'Chromium không tìm thấy. Cài: sudo apt install chromium-browser' };
+
+  const browser = await puppeteer.launch({
+    executablePath: execPath,
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote'],
+    headless: 'new',
+  });
+
   try {
-    const res  = await axios.get('https://www.shrestha.live/', { headers: HTTP_HEADERS, timeout: 20_000 });
-    const html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // Tóm tắt những gì tìm thấy
-    const summary = [];
-    summary.push(`📏 HTML length: ${html.length} chars`);
-    summary.push(`🔑 Contains "netflix.com": ${html.includes('netflix.com')}`);
-    summary.push(`🔑 Contains "NetflixId": ${/NetflixId/i.test(html)}`);
-    summary.push(`🔑 Contains "SecureNetflixId": ${/SecureNetflixId/i.test(html)}`);
-    summary.push(`🔑 Contains "nfvdid": ${/nfvdid/i.test(html)}`);
-    summary.push(`🔑 Contains tab+netflix: ${/\.netflix\.com\t/i.test(html)}`);
-    summary.push(`🔑 Contains JSON cookie: ${/"domain"\s*:\s*"\.?netflix\.com"/i.test(html)}`);
-    summary.push(`🔑 Contains "__NEXT_DATA__": ${html.includes('__NEXT_DATA__')}`);
-    summary.push(`🔑 Contains "api/": ${html.includes('/api/')}`);
+    const networkUrls = [];
+    page.on('response', async (res) => {
+      try {
+        const ct = res.headers()['content-type'] || '';
+        if (ct.includes('json') || ct.includes('text/plain')) {
+          const text = await res.text();
+          if (text.length > 20 && res.url().includes('shrestha')) {
+            networkUrls.push({ url: res.url(), len: text.length, hasNF: text.includes('netflix') });
+          }
+        }
+      } catch {}
+    });
 
-    // Lấy 800 chars đầu của body content
-    const bodyStart = html.indexOf('<body');
-    const snippet   = html.slice(bodyStart > 0 ? bodyStart : 0, (bodyStart > 0 ? bodyStart : 0) + 800);
+    await page.goto('https://www.shrestha.live/', { waitUntil: 'networkidle2', timeout: 60_000 });
 
-    // Tìm các API paths
-    const apiRefs = [...new Set([...html.matchAll(/['"`](\/api\/[^'"`\s?#]{1,60})/g)].map(m => m[1]))].slice(0, 10);
+    // Chờ React render
+    try {
+      await page.waitForFunction(
+        () => document.querySelector('#root')?.children?.length > 0 && document.body.innerText.length > 100,
+        { timeout: 20_000 }
+      );
+    } catch {}
+    await sleep(3000);
 
-    return { summary, snippet: snippet.replace(/[\r\n]+/g, ' ').slice(0, 600), apiRefs, html };
-  } catch (err) {
-    return { error: err.message };
+    // Scroll để lazy-load
+    await page.evaluate(async () => {
+      for (let i = 0; i < 3; i++) {
+        window.scrollBy(0, window.innerHeight);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    });
+    await sleep(1500);
+
+    const info = await page.evaluate(() => ({
+      title:          document.title,
+      bodyTextLen:    document.body.innerText.length,
+      bodySnippet:    document.body.innerText.slice(0, 500),
+      hasNetflix:     document.body.innerText.toLowerCase().includes('netflix'),
+      hasNetflixCom:  document.body.innerText.includes('netflix.com'),
+      hasNetflixId:   /NetflixId/i.test(document.body.innerText),
+      hasTabs:        /\.netflix\.com\t/.test(document.body.innerText),
+      rootChildren:   document.querySelector('#root')?.children?.length ?? 0,
+      buttons:        [...document.querySelectorAll('button,[role="button"]')]
+                        .map(b => b.textContent.trim().slice(0, 40))
+                        .filter(t => t)
+                        .slice(0, 15),
+      textareas:      [...document.querySelectorAll('pre,textarea,code')]
+                        .map(e => (e.value || e.textContent || '').trim().slice(0, 80))
+                        .filter(t => t)
+                        .slice(0, 5),
+    }));
+
+    const html = await page.content();
+
+    const summary = [
+      `📏 Body text length: ${info.bodyTextLen} chars`,
+      `🏷️ Page title: ${info.title}`,
+      `🌳 #root children: ${info.rootChildren}`,
+      `🔑 Contains "netflix": ${info.hasNetflix}`,
+      `🔑 Contains "netflix.com": ${info.hasNetflixCom}`,
+      `🔑 Contains "NetflixId": ${info.hasNetflixId}`,
+      `🔑 Contains tab+netflix: ${info.hasTabs}`,
+      `📡 Network responses: ${networkUrls.length}`,
+    ];
+
+    return {
+      summary,
+      snippet:     info.bodySnippet.replace(/`/g, "'"),
+      apiRefs:     networkUrls.slice(0, 8).map(u => `${u.url.slice(0, 80)} (${u.len}b, netflix=${u.hasNF})`),
+      buttons:     info.buttons,
+      textareas:   info.textareas,
+      html,
+    };
+  } finally {
+    await browser.close();
   }
 }
 
@@ -647,25 +672,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     await interaction.deferReply({ ephemeral: true });
 
-    const { summary, snippet, apiRefs, error, html } = await debugFetchShrestha();
+    const { summary, snippet, apiRefs, buttons, textareas, error, html } = await debugFetchShrestha();
 
     if (error) {
       await interaction.editReply(`❌ Lỗi khi fetch shrestha.live:\n\`\`\`\n${error}\n\`\`\``);
       return;
     }
 
-    // Ghi raw HTML vào file tạm để debug sâu hơn
     const debugFile = path.join(__dirname, 'debug_shrestha.html');
-    try { fs.writeFileSync(debugFile, html, 'utf8'); } catch {}
+    try { fs.writeFileSync(debugFile, html || '', 'utf8'); } catch {}
 
     const summaryText  = summary.join('\n');
-    const apiText      = apiRefs.length ? apiRefs.join('\n') : '(không tìm thấy)';
-    const snippetClean = snippet.replace(/`/g, "'");
+    const apiText      = (apiRefs || []).length ? apiRefs.join('\n') : '(không có)';
+    const btnText      = (buttons || []).length ? buttons.join(' | ') : '(không tìm thấy)';
+    const taText       = (textareas || []).length ? textareas.map((t,i) => `[${i}] ${t}`).join('\n') : '(không có)';
+    const snippetClean = (snippet || '').replace(/`/g, "'").slice(0, 500);
 
     await interaction.editReply(
-      `**🔍 Debug shrestha.live:**\n\`\`\`\n${summaryText}\n\`\`\`` +
-      `\n**📡 API paths tìm thấy:**\n\`\`\`\n${apiText}\n\`\`\`` +
-      `\n**📄 Body snippet (600 chars):**\n\`\`\`html\n${snippetClean}\n\`\`\``
+      `**🔍 Debug shrestha.live (sau khi React render):**\n\`\`\`\n${summaryText}\n\`\`\`` +
+      `\n**🖱️ Buttons trên trang:**\n\`\`\`\n${btnText}\n\`\`\`` +
+      `\n**📋 pre/textarea/code:**\n\`\`\`\n${taText.slice(0,300)}\n\`\`\`` +
+      `\n**📡 Network responses:**\n\`\`\`\n${apiText.slice(0,400)}\n\`\`\`` +
+      `\n**📄 Body text snippet:**\n\`\`\`\n${snippetClean}\n\`\`\``
     );
     return;
   }
