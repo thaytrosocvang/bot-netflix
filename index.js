@@ -18,6 +18,7 @@ import path from 'path';
 import axios from 'axios';
 import pg from 'pg';
 import { fileURLToPath } from 'url';
+import puppeteer from 'puppeteer-core';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -184,6 +185,127 @@ function runConverter(rawCookie) {
   });
 }
 
+// ─── SHRESTHA.LIVE SCRAPER ────────────────────────────────────────────────────
+async function scrapeShrestha(country = null) {
+  const execPath = process.env.PUPPETEER_EXECUTABLE_PATH
+    || '/usr/bin/chromium'
+    || '/usr/bin/chromium-browser';
+
+  const browser = await puppeteer.launch({
+    executablePath: execPath,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+    ],
+    headless: 'new',
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 900 });
+
+    // Chặn tài nguyên nặng để load nhanh hơn
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'font', 'media'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    // Ghi đè clipboard để bắt nội dung nút COPY
+    await page.evaluateOnNewDocument(() => {
+      window.__copiedTexts = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text) => {
+            window.__copiedTexts.push(text);
+            return Promise.resolve();
+          },
+          readText: () => Promise.resolve(''),
+        },
+      });
+    });
+
+    await page.goto('https://www.shrestha.live/', {
+      waitUntil: 'networkidle2',
+      timeout: 45000,
+    });
+
+    // Nếu có country → tìm kiếm và click
+    if (country) {
+      const searchSel = 'input[placeholder*="SEARCH"], input[placeholder*="search"], input[placeholder*="Search"]';
+      try {
+        await page.waitForSelector(searchSel, { timeout: 8000 });
+        await page.click(searchSel);
+        await page.type(searchSel, country, { delay: 80 });
+        await page.waitForTimeout(1800);
+
+        // Click vào kết quả đầu tiên trong dropdown
+        const dropdownItem = await page.$(
+          '[class*="result"]:first-child, [class*="suggestion"]:first-child, ' +
+          '[class*="dropdown"] li:first-child, [class*="list"] li:first-child'
+        );
+        if (dropdownItem) {
+          await dropdownItem.click();
+        } else {
+          // Thử nhấn Enter
+          await page.keyboard.press('Enter');
+        }
+        await page.waitForTimeout(2500);
+      } catch (e) {
+        console.warn('[scrapeShrestha] Không tìm thấy ô search:', e.message);
+      }
+    }
+
+    // Đợi các card cookie load xong
+    await page.waitForTimeout(3000);
+
+    // Bấm toàn bộ nút COPY trên trang
+    const clickedCount = await page.evaluate(() => {
+      let count = 0;
+      document.querySelectorAll('button').forEach(btn => {
+        const t = (btn.textContent || btn.innerText || '').trim().toUpperCase();
+        if (t === 'COPY' || t.includes('COPY')) {
+          btn.click();
+          count++;
+        }
+      });
+      return count;
+    });
+
+    // Chờ clipboard xử lý xong
+    await page.waitForTimeout(500 + clickedCount * 100);
+
+    // Lấy tất cả text đã copy
+    const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
+
+    // Fallback: tìm trực tiếp trong DOM các dòng .netflix.com
+    const domTexts = await page.evaluate(() => {
+      const found = new Set();
+      document.querySelectorAll('pre, textarea, code, [class*="cookie"], [class*="raw"]').forEach(el => {
+        const t = el.innerText || el.textContent || '';
+        if (t.includes('.netflix.com') && (t.includes('NetflixId') || t.includes('SecureNetflixId'))) {
+          found.add(t.trim());
+        }
+      });
+      return [...found];
+    });
+
+    const all = [...copiedTexts, ...domTexts];
+    return all.filter(t => t && (t.includes('NetflixId') || t.includes('SecureNetflixId')));
+
+  } finally {
+    await browser.close();
+  }
+}
+
 // ─── DISCORD CLIENT ───────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -211,6 +333,15 @@ const commands = [
   new SlashCommandBuilder()
     .setName('clearcookie')
     .setDescription('Xóa toàn bộ cookie trong kho (Admin only)'),
+
+  new SlashCommandBuilder()
+    .setName('fetchcookie')
+    .setDescription('Tự động lấy cookie từ shrestha.live (Admin only)')
+    .addStringOption(opt =>
+      opt.setName('country')
+        .setDescription('Tên quốc gia (ví dụ: France, Brazil, US) — bỏ trống = lấy tất cả đang hiển thị')
+        .setRequired(false)
+    ),
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -320,6 +451,66 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (err) {
       await interaction.editReply(`❌ Lỗi khi xóa cookie: ${err.message}`);
       console.error('[clearcookie]', err);
+    }
+    return;
+  }
+
+  // ── /fetchcookie ───────────────────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === 'fetchcookie') {
+    if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
+      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
+      return;
+    }
+
+    const country = interaction.options.getString('country') || null;
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      await interaction.editReply(
+        `🌐 Đang truy cập shrestha.live${country ? ` → **${country}**` : ''}...\n⏳ Quá trình mất ~30 giây, vui lòng chờ.`
+      );
+
+      const rawTexts = await scrapeShrestha(country);
+
+      if (!rawTexts.length) {
+        await interaction.editReply(
+          '❌ Không tìm thấy cookie nào trên trang.\n' +
+          'Có thể tên quốc gia không đúng hoặc trang đang bảo trì.'
+        );
+        return;
+      }
+
+      // Parse từng text thành cookie blocks (mỗi text có thể là 1 block hoặc nhiều blocks)
+      const blocks = [];
+      for (const text of rawTexts) {
+        const parsed = parseCookieFileIntoBlocks(text);
+        if (parsed.length > 0) {
+          blocks.push(...parsed);
+        } else if (text.includes('NetflixId') || text.includes('SecureNetflixId')) {
+          // Text đã là 1 block hoàn chỉnh
+          blocks.push(text.trim());
+        }
+      }
+
+      if (!blocks.length) {
+        await interaction.editReply('❌ Tìm thấy dữ liệu nhưng không parse được cookie hợp lệ.');
+        return;
+      }
+
+      const saved = await pushCookies(blocks);
+      await updateStatus();
+      const total = await countCookies();
+
+      await interaction.editReply(
+        `✅ Đã lấy và lưu **${saved}** cookie từ shrestha.live${country ? ` (${country})` : ''}.\n` +
+        `🗂️ Tổng kho hiện tại: **${total}** cookie.`
+      );
+    } catch (err) {
+      console.error('[fetchcookie]', err);
+      await interaction.editReply(
+        `❌ Lỗi khi scrape: ${err.message}\n` +
+        `Kiểm tra lại Chromium đã được cài chưa (PUPPETEER_EXECUTABLE_PATH).`
+      );
     }
     return;
   }
