@@ -209,98 +209,162 @@ async function scrapeShrestha(country = null) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
 
-    // Chặn tài nguyên nặng để load nhanh hơn
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'font', 'media'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    // Ghi đè clipboard để bắt nội dung nút COPY
+    // Ghi đè clipboard TRƯỚC khi trang load
     await page.evaluateOnNewDocument(() => {
       window.__copiedTexts = [];
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: {
-          writeText: (text) => {
-            window.__copiedTexts.push(text);
-            return Promise.resolve();
+      try {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: (text) => { window.__copiedTexts.push(text); return Promise.resolve(); },
+            readText:  () => Promise.resolve(''),
           },
-          readText: () => Promise.resolve(''),
-        },
-      });
+        });
+      } catch {}
+      // Fallback: bắt execCommand copy
+      const _exec = document.execCommand.bind(document);
+      document.execCommand = function(cmd, ...a) {
+        if (cmd === 'copy') {
+          const sel = window.getSelection();
+          if (sel) window.__copiedTexts.push(sel.toString());
+        }
+        return _exec(cmd, ...a);
+      };
     });
 
+    // Bắt API response có chứa cookie data
+    const apiBlocks = [];
+    page.on('response', async (response) => {
+      try {
+        const ct = response.headers()['content-type'] || '';
+        if (!ct.includes('json') && !ct.includes('text')) return;
+        const text = await response.text();
+        if (
+          (text.includes('NetflixId') || text.includes('SecureNetflixId')) &&
+          text.includes('.netflix.com')
+        ) {
+          apiBlocks.push(text);
+        }
+      } catch {}
+    });
+
+    // Load trang — KHÔNG dùng setRequestInterception để tránh block JS
     await page.goto('https://www.shrestha.live/', {
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: 45000,
     });
 
-    // Nếu có country → tìm kiếm và click
-    if (country) {
-      const searchSel = 'input[placeholder*="SEARCH"], input[placeholder*="search"], input[placeholder*="Search"]';
-      try {
-        await page.waitForSelector(searchSel, { timeout: 8000 });
-        await page.click(searchSel);
-        await page.type(searchSel, country, { delay: 80 });
-        await sleep(1800);
+    // Chờ JS render xong
+    await sleep(6000);
 
-        // Click vào kết quả đầu tiên trong dropdown
-        const dropdownItem = await page.$(
-          '[class*="result"]:first-child, [class*="suggestion"]:first-child, ' +
-          '[class*="dropdown"] li:first-child, [class*="list"] li:first-child'
-        );
-        if (dropdownItem) {
-          await dropdownItem.click();
-        } else {
-          // Thử nhấn Enter
-          await page.keyboard.press('Enter');
-        }
-        await sleep(2500);
-      } catch (e) {
-        console.warn('[scrapeShrestha] Không tìm thấy ô search:', e.message);
+    // Tìm kiếm quốc gia nếu có
+    if (country) {
+      const searchSelectors = [
+        'input[placeholder*="SEARCH"]',
+        'input[placeholder*="search"]',
+        'input[placeholder*="country"]',
+        'input[placeholder*="Country"]',
+        'input[type="text"]',
+        'input[type="search"]',
+      ];
+
+      let typed = false;
+      for (const sel of searchSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            await el.click({ clickCount: 3 });
+            await el.type(country, { delay: 80 });
+            typed = true;
+            break;
+          }
+        } catch {}
+      }
+
+      if (typed) {
+        await sleep(2000);
+        // Click kết quả đầu tiên trong dropdown
+        const resultClicked = await page.evaluate((c) => {
+          const allEls = [...document.querySelectorAll('li, [class*="item"], [class*="result"], [class*="option"], [class*="country"]')];
+          for (const el of allEls) {
+            const t = (el.textContent || el.innerText || '').trim().toUpperCase();
+            if (t.includes(c.toUpperCase())) {
+              el.click();
+              return true;
+            }
+          }
+          return false;
+        }, country);
+
+        if (!resultClicked) await page.keyboard.press('Enter');
+        await sleep(3000);
       }
     }
 
-    // Đợi các card cookie load xong
-    await sleep(3000);
+    // Đợi thêm cho cookie cards load
+    await sleep(2000);
 
-    // Bấm toàn bộ nút COPY trên trang
+    // Bấm TẤT CẢ nút COPY — nhiều cách tìm khác nhau
     const clickedCount = await page.evaluate(() => {
-      let count = 0;
-      document.querySelectorAll('button').forEach(btn => {
-        const t = (btn.textContent || btn.innerText || '').trim().toUpperCase();
-        if (t === 'COPY' || t.includes('COPY')) {
-          btn.click();
-          count++;
+      let n = 0;
+      const allEls = document.querySelectorAll(
+        'button, [role="button"], [class*="copy"], [class*="Copy"], [onclick], span, div, a'
+      );
+      allEls.forEach(el => {
+        const t = (el.textContent || el.innerText || el.value || '').trim().toUpperCase();
+        if (t === 'COPY' || t === '📋 COPY' || t === 'COPY COOKIE') {
+          try { el.click(); n++; } catch {}
         }
       });
-      return count;
+      return n;
     });
 
-    // Chờ clipboard xử lý xong
-    await sleep(500 + clickedCount * 100);
+    console.log(`[scrapeShrestha] Clicked ${clickedCount} COPY buttons`);
+    await sleep(800 + clickedCount * 150);
 
-    // Lấy tất cả text đã copy
+    // Lấy clipboard
     const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
+    console.log(`[scrapeShrestha] Clipboard captured: ${copiedTexts.length} items`);
 
-    // Fallback: tìm trực tiếp trong DOM các dòng .netflix.com
+    // Fallback: quét toàn bộ DOM tìm text có .netflix.com
     const domTexts = await page.evaluate(() => {
       const found = new Set();
-      document.querySelectorAll('pre, textarea, code, [class*="cookie"], [class*="raw"]').forEach(el => {
-        const t = el.innerText || el.textContent || '';
-        if (t.includes('.netflix.com') && (t.includes('NetflixId') || t.includes('SecureNetflixId'))) {
-          found.add(t.trim());
+
+      // Tìm trong các element lá (không có children)
+      document.querySelectorAll('*').forEach(el => {
+        if (el.children.length > 0) return;
+        const t = (el.textContent || el.innerText || '').trim();
+        if (t.length > 50 && t.includes('.netflix.com') &&
+            (t.includes('NetflixId') || t.includes('SecureNetflixId'))) {
+          found.add(t);
         }
       });
+
+      // Tìm trong pre / textarea / code
+      document.querySelectorAll('pre, textarea, code').forEach(el => {
+        const t = (el.value || el.textContent || el.innerText || '').trim();
+        if (t.includes('.netflix.com') &&
+            (t.includes('NetflixId') || t.includes('SecureNetflixId'))) {
+          found.add(t);
+        }
+      });
+
+      // Fallback: tách body text theo dòng trống
+      const bodyText = document.body.innerText || '';
+      bodyText.split(/\n{2,}/).forEach(block => {
+        if (block.includes('.netflix.com') &&
+            (block.includes('NetflixId') || block.includes('SecureNetflixId'))) {
+          found.add(block.trim());
+        }
+      });
+
       return [...found];
     });
 
-    const all = [...copiedTexts, ...domTexts];
+    console.log(`[scrapeShrestha] DOM texts: ${domTexts.length}, API blocks: ${apiBlocks.length}`);
+
+    // Gộp tất cả sources
+    const all = [...new Set([...copiedTexts, ...domTexts, ...apiBlocks])];
     return all.filter(t => t && (t.includes('NetflixId') || t.includes('SecureNetflixId')));
 
   } finally {
@@ -477,7 +541,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!rawTexts.length) {
         await interaction.editReply(
           '❌ Không tìm thấy cookie nào trên trang.\n' +
-          'Có thể tên quốc gia không đúng hoặc trang đang bảo trì.'
+          '💡 Thử dùng tên tiếng Anh đúng chuẩn, ví dụ: `France`, `Brazil`, `United States`.\n' +
+          'Hoặc dùng `/fetchcookie` không có country để lấy tất cả đang hiển thị.'
         );
         return;
       }
