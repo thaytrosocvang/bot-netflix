@@ -186,6 +186,8 @@ function runConverter(rawCookie) {
 }
 
 // ─── SHRESTHA.LIVE SCRAPER ────────────────────────────────────────────────────
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function scrapeShrestha(country = null) {
   const execPath = process.env.PUPPETEER_EXECUTABLE_PATH
     || '/usr/bin/chromium'
@@ -245,7 +247,7 @@ async function scrapeShrestha(country = null) {
         await page.waitForSelector(searchSel, { timeout: 8000 });
         await page.click(searchSel);
         await page.type(searchSel, country, { delay: 80 });
-        await page.waitForTimeout(1800);
+        await sleep(1800);
 
         // Click vào kết quả đầu tiên trong dropdown
         const dropdownItem = await page.$(
@@ -258,14 +260,14 @@ async function scrapeShrestha(country = null) {
           // Thử nhấn Enter
           await page.keyboard.press('Enter');
         }
-        await page.waitForTimeout(2500);
+        await sleep(2500);
       } catch (e) {
         console.warn('[scrapeShrestha] Không tìm thấy ô search:', e.message);
       }
     }
 
     // Đợi các card cookie load xong
-    await page.waitForTimeout(3000);
+    await sleep(3000);
 
     // Bấm toàn bộ nút COPY trên trang
     const clickedCount = await page.evaluate(() => {
@@ -281,7 +283,7 @@ async function scrapeShrestha(country = null) {
     });
 
     // Chờ clipboard xử lý xong
-    await page.waitForTimeout(500 + clickedCount * 100);
+    await sleep(500 + clickedCount * 100);
 
     // Lấy tất cả text đã copy
     const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
