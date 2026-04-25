@@ -237,15 +237,14 @@ const HTTP_HEADERS = {
 async function scrapeViaAPI(_country) { return []; }
 async function scrapeViaHTML(_country) { return []; }
 
-// ─── TẦNG 3: PUPPETEER (chờ React render xong) ───────────────────────────────
-async function scrapeViaPuppeteer(country) {
+// ─── HELPER: Khởi động Puppeteer browser ─────────────────────────────────────
+async function launchBrowser() {
   let puppeteer;
   try {
     puppeteer = (await import('puppeteer-core')).default;
   } catch {
     throw new Error('puppeteer-core chưa cài. Chạy: npm install puppeteer-core');
   }
-
   const chromiumPaths = [
     process.env.PUPPETEER_EXECUTABLE_PATH,
     '/usr/bin/chromium',
@@ -253,37 +252,37 @@ async function scrapeViaPuppeteer(country) {
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
   ].filter(Boolean);
-
   const execPath = chromiumPaths.find(p => fs.existsSync(p));
   if (!execPath) throw new Error(
     'Chromium không tìm thấy.\n' +
     '  • Ubuntu/Debian: sudo apt install chromium-browser\n' +
     '  • Hoặc đặt PUPPETEER_EXECUTABLE_PATH=/path/to/chromium trong .env'
   );
-
-  const browser = await puppeteer.launch({
+  return puppeteer.launch({
     executablePath: execPath,
     args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote'],
     headless: 'new',
   });
+}
+
+// ─── TẦNG 3: PUPPETEER — Click country button để lộ cookie ───────────────────
+async function scrapeViaPuppeteer(country) {
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // ── Bắt XHR/fetch responses trước khi navigate ────────────────────────
+    // ── Bắt toàn bộ network responses ────────────────────────────────────
     const networkTexts = [];
     page.on('response', async (response) => {
       try {
-        const url = response.url();
-        const ct  = response.headers()['content-type'] || '';
+        const ct = response.headers()['content-type'] || '';
         if (!ct.includes('json') && !ct.includes('text')) return;
-        // Chỉ quan tâm response từ chính shrestha.live
-        if (!url.includes('shrestha')) return;
         const text = await response.text();
         if (looksLikeNetflixData(text)) {
-          console.log(`[Tầng 3 Network] Hit: ${url}`);
+          console.log(`[Tầng 3 Network] Hit: ${response.url()}`);
           networkTexts.push(text);
         }
       } catch {}
@@ -312,111 +311,150 @@ async function scrapeViaPuppeteer(country) {
     });
 
     // ── Navigate & chờ React render ───────────────────────────────────────
-    const targetUrl = country
-      ? `https://www.shrestha.live/?country=${encodeURIComponent(country)}`
-      : 'https://www.shrestha.live/';
-
-    console.log(`[Tầng 3] Navigating to ${targetUrl}`);
-    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60_000 });
-
-    // Chờ React render: đợi #root có children thực sự
+    console.log('[Tầng 3] Navigating to shrestha.live...');
+    await page.goto('https://www.shrestha.live/', { waitUntil: 'networkidle2', timeout: 60_000 });
     try {
       await page.waitForFunction(
         () => document.querySelector('#root')?.children?.length > 0 &&
               document.body.innerText.trim().length > 100,
         { timeout: 20_000 }
       );
-    } catch {
-      console.log('[Tầng 3] waitForFunction timeout — tiếp tục...');
-    }
+    } catch { console.log('[Tầng 3] waitForFunction timeout — tiếp tục...'); }
+    await sleep(3000);
 
-    await sleep(3000); // thêm buffer cho lazy-load
-
-    // ── Nếu có country filter ─────────────────────────────────────────────
-    if (country) {
-      for (const sel of [
-        'input[placeholder*="SEARCH"]', 'input[placeholder*="search"]',
-        'input[placeholder*="country"]', 'input[type="text"]', 'input[type="search"]',
-      ]) {
-        try {
-          const el = await page.$(sel);
-          if (el) {
-            await el.click({ clickCount: 3 });
-            await el.type(country, { delay: 80 });
-            await sleep(1500);
-            await page.keyboard.press('Enter');
-            await sleep(2500);
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    // ── Scroll xuống để trigger lazy-load ────────────────────────────────
-    await page.evaluate(async () => {
-      for (let i = 0; i < 5; i++) {
-        window.scrollBy(0, window.innerHeight);
-        await new Promise(r => setTimeout(r, 600));
-      }
-    });
-    await sleep(1500);
-
-    // ── Click tất cả nút Copy ─────────────────────────────────────────────
-    const copyCount = await page.evaluate(() => {
-      let n = 0;
-      const keywords = ['COPY','COPY COOKIE','GET COOKIE','📋 COPY','COPY ALL'];
-      document.querySelectorAll('button,[role="button"],[class*="copy"],[class*="Copy"]').forEach(el => {
-        const t = (el.textContent || '').trim().toUpperCase();
-        if (keywords.some(k => t.includes(k))) {
-          try { el.click(); n++; } catch {}
-        }
-      });
-      return n;
-    });
-    console.log(`[Tầng 3] Clicked ${copyCount} copy button(s)`);
-    await sleep(1000 + copyCount * 200);
-
-    // ── Thu thập clipboard ────────────────────────────────────────────────
-    const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
-
-    // ── Thu thập DOM text ─────────────────────────────────────────────────
-    const domTexts = await page.evaluate(() => {
+    // ── Helper: Hút cookie từ DOM hiện tại ────────────────────────────────
+    const collectDomTexts = () => page.evaluate(() => {
       const found = new Set();
-
-      // pre / textarea / code / input[type=text]
       document.querySelectorAll('pre, textarea, code, input[type="text"]').forEach(el => {
         const t = (el.value || el.textContent || '').trim();
         if (t.length > 50 && t.includes('netflix.com')) found.add(t);
       });
-
-      // Leaf nodes có netflix.com
       document.querySelectorAll('*').forEach(el => {
         if (el.children.length > 0) return;
         const t = (el.textContent || '').trim();
         if (t.length > 80 && t.includes('netflix.com')) found.add(t);
       });
-
-      // Tách theo double-newline từ body text
-      const bodyLines = (document.body.innerText || '').split(/\n{2,}/);
-      for (const b of bodyLines) {
+      (document.body.innerText || '').split(/\n{2,}/).forEach(b => {
         if (b.trim().length > 50 && b.includes('netflix.com')) found.add(b.trim());
-      }
-
+      });
       return [...found];
     });
 
-    // ── Log cấu trúc trang để debug ───────────────────────────────────────
-    const pageSnapshot = await page.evaluate(() => ({
-      title:        document.title,
-      bodyLength:   document.body.innerText.length,
-      hasNetflix:   document.body.innerText.includes('netflix'),
-      rootChildren: document.querySelector('#root')?.children?.length ?? 0,
-      snippetInner: document.body.innerText.slice(0, 300),
-    }));
-    console.log('[Tầng 3 Snapshot]', JSON.stringify(pageSnapshot));
+    // ── Helper: Click tất cả copy buttons trên trang hiện tại ────────────
+    const clickCopyButtons = async () => {
+      const n = await page.evaluate(() => {
+        let clicked = 0;
+        const keywords = ['COPY','COPY COOKIE','GET COOKIE','📋 COPY','COPY ALL','DOWNLOAD'];
+        document.querySelectorAll('button,[role="button"],[class*="copy"],[class*="Copy"]').forEach(el => {
+          const t = (el.textContent || '').trim().toUpperCase();
+          if (keywords.some(k => t.includes(k))) {
+            try { el.click(); clicked++; } catch {}
+          }
+        });
+        return clicked;
+      });
+      if (n > 0) await sleep(800 + n * 200);
+      return n;
+    };
 
-    const all = [...new Set([...copiedTexts, ...domTexts, ...networkTexts])];
-    console.log(`[Tầng 3] clipboard=${copiedTexts.length} dom=${domTexts.length} network=${networkTexts.length}`);
+    // ── CHIẾN LƯỢC CHÍNH: Click vào country buttons có 🍪 ────────────────
+    // Trang hiển thị danh sách country dưới dạng button với số cookie
+    // Cần click từng button để mở panel/modal chứa cookie thực
+    const countryButtons = await page.evaluate((filterCountry) => {
+      const results = [];
+      const allBtns = [...document.querySelectorAll('button,[role="button"]')];
+      for (const btn of allBtns) {
+        const text = (btn.textContent || '').trim();
+        // Bỏ qua nút điều hướng
+        if (['JOIN NOW','CLOSE TERMINAL','CHECKER','CLOSE'].some(k => text.toUpperCase().includes(k))) continue;
+        // Ưu tiên button có emoji 🍪 (có cookie)
+        const hasCookie = text.includes('🍪') || /\d+\s*🍪/.test(text);
+        if (!hasCookie) continue;
+        // Nếu filter country, kiểm tra text chứa tên country
+        if (filterCountry && !text.toUpperCase().includes(filterCountry.toUpperCase())) continue;
+        results.push(text.slice(0, 60));
+      }
+      return results;
+    }, country);
+
+    console.log(`[Tầng 3] Tìm thấy ${countryButtons.length} country buttons có 🍪`);
+
+    // Click lần lượt từng country button, mỗi lần thu thập cookie
+    const allDomTexts = [];
+    const maxClicks = country ? countryButtons.length : Math.min(countryButtons.length, 10);
+
+    for (let i = 0; i < maxClicks; i++) {
+      const btnText = countryButtons[i];
+      try {
+        // Tìm lại element theo text (DOM có thể đã thay đổi)
+        const clicked = await page.evaluate((targetText) => {
+          const allBtns = [...document.querySelectorAll('button,[role="button"]')];
+          for (const btn of allBtns) {
+            if ((btn.textContent || '').trim().startsWith(targetText.slice(0, 30))) {
+              btn.click();
+              return true;
+            }
+          }
+          return false;
+        }, btnText);
+
+        if (!clicked) continue;
+        console.log(`[Tầng 3] Đã click: ${btnText.slice(0, 40)}`);
+
+        // Chờ panel/modal/textarea xuất hiện
+        await sleep(2000);
+
+        // Thu thập cookie từ DOM sau khi click
+        const texts = await collectDomTexts();
+        for (const t of texts) {
+          if (!allDomTexts.includes(t)) allDomTexts.push(t);
+        }
+
+        // Click copy buttons trong panel vừa mở
+        await clickCopyButtons();
+        await sleep(500);
+
+        // Đóng panel/modal nếu có (click Escape hoặc nút Close)
+        await page.keyboard.press('Escape');
+        await sleep(500);
+        await page.evaluate(() => {
+          const closeKeywords = ['CLOSE','×','✕','❌'];
+          document.querySelectorAll('button,[role="button"]').forEach(btn => {
+            const t = (btn.textContent || '').trim().toUpperCase();
+            if (closeKeywords.some(k => t === k)) { try { btn.click(); } catch {} }
+          });
+        });
+        await sleep(300);
+
+        // Nếu đã có đủ cookie thì dừng sớm
+        if (allDomTexts.length >= 20) break;
+
+      } catch (err) {
+        console.log(`[Tầng 3] Lỗi click button ${i}: ${err.message}`);
+      }
+    }
+
+    // ── Nếu chưa có gì — thử click nút CHECKER ───────────────────────────
+    if (!allDomTexts.length && !networkTexts.length) {
+      console.log('[Tầng 3] Không tìm thấy từ country buttons — thử click CHECKER...');
+      await page.evaluate(() => {
+        document.querySelectorAll('button,[role="button"]').forEach(btn => {
+          if ((btn.textContent || '').trim().toUpperCase().includes('CHECKER')) {
+            try { btn.click(); } catch {}
+          }
+        });
+      });
+      await sleep(3000);
+      const texts = await collectDomTexts();
+      allDomTexts.push(...texts);
+      await clickCopyButtons();
+    }
+
+    // ── Thu thập clipboard ────────────────────────────────────────────────
+    const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
+
+    const all = [...new Set([...copiedTexts, ...allDomTexts, ...networkTexts])];
+    console.log(`[Tầng 3] clipboard=${copiedTexts.length} dom=${allDomTexts.length} network=${networkTexts.length} total=${all.length}`);
     return all.filter(t => t && looksLikeNetflixData(t));
 
   } finally {
@@ -464,23 +502,9 @@ async function scrapeShrestha(country = null) {
 // ─── DEBUG: Xem raw HTML shrestha.live ───────────────────────────────────────
 async function debugFetchShrestha() {
   // Site là React SPA — cần Puppeteer để xem DOM thật sau khi render
-  let puppeteer;
-  try { puppeteer = (await import('puppeteer-core')).default; }
-  catch { return { error: 'puppeteer-core chưa cài. Chạy: npm install puppeteer-core' }; }
-
-  const chromiumPaths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    '/usr/bin/chromium', '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
-  ].filter(Boolean);
-  const execPath = chromiumPaths.find(p => fs.existsSync(p));
-  if (!execPath) return { error: 'Chromium không tìm thấy. Cài: sudo apt install chromium-browser' };
-
-  const browser = await puppeteer.launch({
-    executablePath: execPath,
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote'],
-    headless: 'new',
-  });
+  let browser;
+  try { browser = await launchBrowser(); }
+  catch (e) { return { error: e.message }; }
 
   try {
     const page = await browser.newPage();
