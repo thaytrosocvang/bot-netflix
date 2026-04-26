@@ -1,356 +1,480 @@
-import 'dotenv/config';
-import {
-  Client,
-  GatewayIntentBits,
-  Events,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  ActivityType,
-} from 'discord.js';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import axios from 'axios';
-import { fileURLToPath } from 'url';
+import json
+import re
+import sys
+import html
+import unicodedata
+from urllib.parse import quote
+import requests
+from urllib3.exceptions import InsecureRequestWarning
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
-// ─── ENV ──────────────────────────────────────────────────────────────────────
-const DISCORD_TOKEN     = process.env.DISCORD_TOKEN;
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const GUILD_ID          = process.env.GUILD_ID;
-const ADMIN_IDS         = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+# ─── decode helpers ──────────────────────────────────────────────────────────
+def _decode_unicode_escape(match):
+    try:
+        return chr(int(match.group(1), 16))
+    except Exception:
+        return match.group(0)
 
-// ─── PYTHON BINARY (Windows compatible) ──────────────────────────────────────
-const PYTHON_BIN = (() => {
-  const candidates = [
-    path.join(__dirname, 'venv', 'Scripts', 'python.exe'),
-    path.join(__dirname, 'venv', 'bin', 'python3'),
-    path.join(__dirname, 'venv', 'bin', 'python'),
-    'python',
-    'python3',
-  ];
-  for (const p of candidates) {
-    if (p.includes('venv')) {
-      if (fs.existsSync(p)) return p;
-    } else {
-      return p;
+
+def _decode_hex_escape(match):
+    try:
+        return chr(int(match.group(1), 16))
+    except Exception:
+        return match.group(0)
+
+
+def decode_netflix_value(value):
+    if value is None:
+        return None
+    cleaned = html.unescape(str(value))
+    replacements = {
+        "\\x20": " ",
+        "\\u00A0": " ",
+        "\\u00a0": " ",
+        "&nbsp;": " ",
+        "u00A0": " ",
     }
-  }
-  return 'python';
-})();
+    for source, target in replacements.items():
+        cleaned = cleaned.replace(source, target)
+    cleaned = cleaned.replace("\\/", "/").replace('\\"', '"').replace("\\n", " ").replace("\\t", " ")
+    for _ in range(3):
+        previous = cleaned
+        cleaned = re.sub(r"\\u([0-9a-fA-F]{4})", _decode_unicode_escape, cleaned)
+        cleaned = re.sub(r"\\x([0-9a-fA-F]{2})", _decode_hex_escape, cleaned)
+        cleaned = re.sub(r"(?<!\\)\bu([0-9a-fA-F]{4})(?![0-9a-fA-F])", _decode_unicode_escape, cleaned)
+        cleaned = cleaned.replace("\\\\", "\\")
+        if cleaned == previous:
+            break
+    cleaned = re.sub(r"(?<=[A-Za-z])\s+(?=[^\x00-\x7F])", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
 
-// ─── IN-MEMORY COOKIE QUEUE ───────────────────────────────────────────────────
-const cookieQueue = [];
-const countCookies = () => cookieQueue.length;
-const popCookie    = () => cookieQueue.shift() || null;
-const pushCookies  = (blocks) => { cookieQueue.push(...blocks); return blocks.length; };
-const clearCookies = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
-const requeueCookie = (block) => { cookieQueue.push(block); }; // đẩy lại cuối queue
 
-// ─── PARSER ───────────────────────────────────────────────────────────────────
-function parseCookieFileIntoBlocks(rawText) {
-  const blocks = [];
-  const lines  = rawText.split(/\r?\n/);
-  let cur = [];
+# ─── cookie constants ────────────────────────────────────────────────────────
+LOGIN_REQUIRED_NETFLIX_COOKIES = ("NetflixId",)
+OPTIONAL_NETFLIX_COOKIES = ("SecureNetflixId", "nfvdid", "OptanonConsent")
+ALL_NETFLIX_COOKIE_NAMES = set(LOGIN_REQUIRED_NETFLIX_COOKIES + OPTIONAL_NETFLIX_COOKIES)
+CANONICAL_NETFLIX_COOKIE_NAMES = {name.lower(): name for name in ALL_NETFLIX_COOKIE_NAMES}
 
-  for (const line of lines) {
-    const t = line.trim();
-    if (t.startsWith('.netflix.com') || t.startsWith('netflix.com')) {
-      cur.push(line);
-    } else {
-      if (cur.length > 0) {
-        const block = cur.join('\n');
-        if (/NetflixId/i.test(block) || /SecureNetflixId/i.test(block)) blocks.push(block);
-        cur = [];
-      }
-    }
-  }
-  if (cur.length > 0) {
-    const block = cur.join('\n');
-    if (/NetflixId/i.test(block) || /SecureNetflixId/i.test(block)) blocks.push(block);
-  }
-  return blocks;
-}
 
-// ─── CONVERTER ────────────────────────────────────────────────────────────────
-function runConverter(rawCookie) {
-  return new Promise((resolve) => {
-    const child = spawn(PYTHON_BIN, [path.join(__dirname, 'convert_single.py')], {
-      cwd: __dirname,
-      shell: process.platform === 'win32', // cần trên Windows
-    });
-    let stdout = '', stderr = '';
-    child.stdout.on('data', d => { stdout += d; });
-    child.stderr.on('data', d => { stderr += d; });
-    child.on('close', () => {
-      const out = stdout.trim();
-      if (!out) return resolve({ error: `Không có output`, detail: stderr.slice(-300) });
-      try { resolve(JSON.parse(out)); }
-      catch { resolve({ error: `Không parse được JSON`, detail: out.slice(-200) }); }
-    });
-    child.on('error', err => resolve({ error: `Không thể chạy Python: ${err.message}` }));
-    child.stdin.write(rawCookie);
-    child.stdin.end();
-  });
-}
+def canonicalize_netflix_cookie_name(name):
+    normalized = str(name or "").strip()
+    return CANONICAL_NETFLIX_COOKIE_NAMES.get(normalized.lower(), normalized)
 
-// ─── DISCORD CLIENT ───────────────────────────────────────────────────────────
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-});
 
-// ─── SLASH COMMANDS ───────────────────────────────────────────────────────────
-const commands = [
-  new SlashCommandBuilder()
-    .setName('start')
-    .setDescription('Lấy link Netflix (PC hoặc Điện Thoại)'),
+def is_netflix_domain(domain):
+    normalized = str(domain or "").strip()
+    if normalized.startswith("#HttpOnly_"):
+        normalized = normalized[len("#HttpOnly_"):]
+    normalized = normalized.lower()
+    return "netflix." in normalized
 
-  new SlashCommandBuilder()
-    .setName('upcookie')
-    .setDescription('Upload file cookie cho bot (Admin only)')
-    .addAttachmentOption(opt =>
-      opt.setName('file').setDescription('File .txt chứa cookie Netflix (Netscape format)').setRequired(true)
-    ),
 
-  new SlashCommandBuilder()
-    .setName('clearcookie')
-    .setDescription('Xóa toàn bộ cookie trong kho (Admin only)'),
+def is_netflix_cookie_entry(domain, name):
+    normalized_name = canonicalize_netflix_cookie_name(name)
+    return normalized_name in ALL_NETFLIX_COOKIE_NAMES or is_netflix_domain(domain)
 
-  new SlashCommandBuilder()
-    .setName('status')
-    .setDescription('Xem số cookie đang có trong kho'),
-].map(c => c.toJSON());
 
-async function registerCommands() {
-  const rest  = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-  const route = GUILD_ID
-    ? Routes.applicationGuildCommands(DISCORD_CLIENT_ID, GUILD_ID)
-    : Routes.applicationCommands(DISCORD_CLIENT_ID);
-  try {
-    await rest.put(route, { body: commands });
-    console.log(`✅ Đã đăng ký ${commands.length} slash commands`);
-  } catch (err) {
-    console.error('❌ Lỗi đăng ký commands:', err.message);
-  }
-}
+def has_required_netflix_cookies(cookie_dict):
+    if not isinstance(cookie_dict, dict):
+        return False
+    for cookie_name in LOGIN_REQUIRED_NETFLIX_COOKIES:
+        if not decode_netflix_value(cookie_dict.get(cookie_name)):
+            return False
+    return True
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-function planToEmoji(plan = '') {
-  const p = plan.toLowerCase();
-  if (p.includes('premium'))  return '💎';
-  if (p.includes('standard')) return '⭐';
-  if (p.includes('basic'))    return '🔵';
-  if (p.includes('mobile'))   return '📱';
-  return '🎬';
-}
 
-function updateStatus() {
-  const count = countCookies();
-  client.user?.setPresence({
-    status: count > 0 ? 'online' : 'idle',
-    activities: [{
-      name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
-      type: ActivityType.Streaming,
-      url: 'https://www.twitch.tv/tunkit2302',
-    }],
-  });
-}
+# ─── netscape parsing ────────────────────────────────────────────────────────
+def split_netscape_cookie_columns(line):
+    stripped = line.strip()
+    if not stripped:
+        return []
+    if stripped.startswith("#") and not stripped.startswith("#HttpOnly_"):
+        return []
+    if stripped.startswith("#HttpOnly_"):
+        stripped = stripped[len("#HttpOnly_"):]
+    if not stripped:
+        return []
 
-// ─── READY ────────────────────────────────────────────────────────────────────
-client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ Bot online: ${c.user.tag}`);
-  console.log(`🐍 Python: ${PYTHON_BIN}`);
-  await registerCommands();
-  updateStatus();
-});
+    parts = stripped.split("\t")
+    if len(parts) >= 7:
+        return parts[:6] + ["\t".join(parts[6:])]
 
-// ─── INTERACTIONS ─────────────────────────────────────────────────────────────
-client.on(Events.InteractionCreate, async (interaction) => {
+    parts = re.split(r"\s+", stripped, maxsplit=6)
+    if len(parts) >= 7:
+        return parts
+    return []
 
-  // ── /start ─────────────────────────────────────────────────────────────────
-  if (interaction.isChatInputCommand() && interaction.commandName === 'start') {
-    const count = countCookies();
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('btn_phone').setLabel('📱 Link Điện Thoại').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('btn_pc').setLabel('🖥️ Link Máy Tính').setStyle(ButtonStyle.Primary),
-    );
+def is_netscape_cookie_line(line):
+    parts = split_netscape_cookie_columns(line)
+    if len(parts) < 7:
+        return False
+    if parts[1].upper() not in ("TRUE", "FALSE"):
+        return False
+    if parts[3].upper() not in ("TRUE", "FALSE"):
+        return False
+    if not re.match(r"^-?\d+(?:\.\d+)?$", parts[4].strip()):
+        return False
+    return True
 
-    const rowGuide = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('📖 Hướng Dẫn Điện Thoại').setStyle(ButtonStyle.Link)
-        .setURL('https://drive.google.com/drive/folders/1QAw4249og5hJuqF4jAcwCecTvyytv2jZ?usp=drive_link'),
-      new ButtonBuilder()
-        .setLabel('📖 Hướng Dẫn Máy Tính').setStyle(ButtonStyle.Link)
-        .setURL('https://drive.google.com/drive/folders/1S7bINLNLjy_Phmhc76DSugm1xgA44OJ_?usp=drive_link'),
-    );
 
-    const embed = new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('🎬 Netflix của Tún Kịt')
-      .setDescription(
-        '**Chọn loại link bạn muốn tạo:**\n\n' +
-        '📱 **Điện Thoại** – Tối ưu cho mobile\n' +
-        '🖥️ **Máy Tính** – Tối ưu cho desktop\n\n' +
-        `> 🗂️ Còn **${count}** cookie trong kho\n\n` +
-        '> ⚠️ Nếu acc không xem được pls log out và đổi qua acc khác, ping admin nếu có thắc mắc',
-      )
-      .setFooter({ text: 'Bot by Sếp Tún Kịt' });
-
-    await interaction.reply({ embeds: [embed], components: [row, rowGuide] });
-    return;
-  }
-
-  // ── /status ────────────────────────────────────────────────────────────────
-  if (interaction.isChatInputCommand() && interaction.commandName === 'status') {
-    const count = countCookies();
-    await interaction.reply({
-      content: count > 0
-        ? `🗂️ Hiện có **${count}** cookie trong kho.`
-        : `📭 Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,
-      ephemeral: true,
-    });
-    return;
-  }
-
-  // ── /clearcookie ───────────────────────────────────────────────────────────
-  if (interaction.isChatInputCommand() && interaction.commandName === 'clearcookie') {
-    if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
-      return;
-    }
-    const removed = clearCookies();
-    updateStatus();
-    await interaction.reply({
-      content: `🗑️ Đã xóa **${removed}** cookie!\n✅ Kho hiện tại: **0** cookie.`,
-      ephemeral: true,
-    });
-    return;
-  }
-
-  // ── /upcookie ──────────────────────────────────────────────────────────────
-  if (interaction.isChatInputCommand() && interaction.commandName === 'upcookie') {
-    if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
-      return;
-    }
-    const attachment = interaction.options.getAttachment('file');
-    if (!attachment.name.toLowerCase().endsWith('.txt')) {
-      await interaction.reply({ content: '❌ Chỉ nhận file `.txt` chứa cookie Netflix.', ephemeral: true });
-      return;
-    }
-    await interaction.deferReply({ ephemeral: true });
-    try {
-      const res    = await axios.get(attachment.url, { responseType: 'text', timeout: 10_000 });
-      const blocks = parseCookieFileIntoBlocks(res.data);
-      if (!blocks.length) {
-        await interaction.editReply('❌ Không tìm thấy cookie hợp lệ trong file.\nCần dòng `.netflix.com` có `NetflixId` hoặc `SecureNetflixId`.');
-        return;
-      }
-      const saved = pushCookies(blocks);
-      updateStatus();
-      await interaction.editReply(`✅ Đã thêm **${saved}** cookie vào kho.\n🗂️ Tổng: **${countCookies()}** cookie.`);
-    } catch (err) {
-      await interaction.editReply(`❌ Lỗi: ${err.message}`);
-    }
-    return;
-  }
-
-  // ── Buttons ────────────────────────────────────────────────────────────────
-  if (interaction.isButton() && (interaction.customId === 'btn_phone' || interaction.customId === 'btn_pc')) {
-    const mode = interaction.customId === 'btn_phone' ? 'phone' : 'pc';
-    await interaction.deferReply();
-
-    if (countCookies() === 0) {
-      await interaction.editReply('❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.');
-      return;
+def build_netscape_cookie_entry(domain, tail_match, path, secure, expires, name, value, position):
+    normalized_expires = str(expires or 0).strip()
+    if re.fullmatch(r"-?\d+\.\d+", normalized_expires):
+        try:
+            normalized_expires = str(int(float(normalized_expires)))
+        except Exception:
+            pass
+    return {
+        "domain": str(domain or "").replace("#HttpOnly_", "", 1),
+        "tail_match": "TRUE" if str(tail_match).upper() == "TRUE" else "FALSE",
+        "path": str(path or "/"),
+        "secure": "TRUE" if str(secure).upper() == "TRUE" else "FALSE",
+        "expires": normalized_expires or "0",
+        "name": canonicalize_netflix_cookie_name(name),
+        "value": str(value or ""),
+        "position": position,
     }
 
-    // ── Retry loop: thử tối đa 3 cookie liên tiếp ──────────────────────────
-    const MAX_ATTEMPTS = 3;
-    let result = null;
-    let usedCookie = null;
-    let attempts = 0;
 
-    while (attempts < MAX_ATTEMPTS && countCookies() > 0) {
-      attempts++;
-      const rawCookie = popCookie();
-      if (!rawCookie) break;
+def format_netscape_cookie_entry(entry):
+    return (
+        f"{entry['domain']}\t{entry['tail_match']}\t{entry['path']}\t{entry['secure']}\t"
+        f"{entry['expires']}\t{entry['name']}\t{entry['value']}"
+    )
 
-      await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts})...`);
-      result = await runConverter(rawCookie);
 
-      if (!result.error) {
-        usedCookie = rawCookie;
-        break; // thành công
-      }
-
-      // Thất bại — log và đẩy cookie về cuối queue để dùng lại sau
-      console.error(`[attempt ${attempts}] Cookie lỗi:`, result.error, result.detail || '');
-      requeueCookie(rawCookie); // ← đẩy lại thay vì bỏ luôn
-      result = null;
-
-      // Delay nhỏ giữa các lần thử để tránh rate limit
-      await new Promise(r => setTimeout(r, 1500));
-    }
-
-    updateStatus();
-
-    if (!result || result.error) {
-      await interaction.editReply(
-        `⚠️ Không tạo được link sau **${attempts}** lần thử.\n` +
-        `Có thể do proxy không ổn định hoặc Netflix đang throttle.\n` +
-        `Còn **${countCookies()}** cookie trong kho — vui lòng thử lại sau ít phút.`
-      );
-      return;
-    }
-
-    const link = mode === 'phone' ? result.phone_link : result.pc_link;
-
-    if (!link) {
-      // Có result nhưng thiếu link mode được chọn
-      const altLink = mode === 'phone' ? result.pc_link : result.phone_link;
-      const altLabel = mode === 'phone' ? '🖥️ Link Máy Tính' : '📱 Link Điện Thoại';
-      const embed = new EmbedBuilder()
-        .setColor(0xe67e22)
-        .setTitle('⚠️ Chỉ có link thay thế')
-        .setDescription(`Không có link ${mode === 'phone' ? 'Điện Thoại' : 'Máy Tính'}, dùng link thay thế bên dưới:`)
-        .addFields(
-          { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
-          { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
-          { name: '🌍 Country',                       value: result.country || '??',        inline: true },
-          { name: altLabel, value: altLink || '(không có link nào)' },
+def extract_netscape_cookie_entries(raw_text):
+    entries = []
+    for index, line in enumerate(raw_text.splitlines()):
+        if not is_netscape_cookie_line(line):
+            continue
+        parts = split_netscape_cookie_columns(line)
+        if len(parts) < 7:
+            continue
+        domain = parts[0]
+        name = canonicalize_netflix_cookie_name(parts[5])
+        if not is_netflix_cookie_entry(domain, name):
+            continue
+        entries.append(
+            build_netscape_cookie_entry(
+                domain, parts[1], parts[2], parts[3], parts[4], name, parts[6], index
+            )
         )
-        .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
-      await interaction.editReply({ content: '', embeds: [embed] });
-      return;
-    }
+    return entries
 
-    const embed = new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('✅ Tạo Link Thành Công!')
-      .addFields(
-        { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
-        { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
-        { name: '🌍 Country',                       value: result.country || '??',        inline: true },
-        { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link },
-      )
-      .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
 
-    await interaction.editReply({ content: '', embeds: [embed] });
-  }
-});
+def extract_raw_cookie_entries(raw_text):
+    pattern = re.compile(
+        rf"(?:['\"])?(?P<name>{'|'.join(sorted((re.escape(name) for name in ALL_NETFLIX_COOKIE_NAMES), key=len, reverse=True))})(?:['\"])?"
+        r"\s*(?:=|:)\s*(?P<value>\"[^\"]*\"|'[^']*'|[^;\s]+)",
+        re.IGNORECASE,
+    )
+    entries = []
+    for index, match in enumerate(pattern.finditer(raw_text)):
+        cookie_name = canonicalize_netflix_cookie_name(match.group("name"))
+        value = match.group("value")
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        else:
+            value = value.rstrip(",")
+        entries.append(
+            build_netscape_cookie_entry(
+                ".netflix.com", "TRUE", "/", "TRUE" if cookie_name == "SecureNetflixId" else "FALSE", "0", cookie_name, value, index
+            )
+        )
+    return entries
 
-// ─── LOGIN ────────────────────────────────────────────────────────────────────
-if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
-  console.error('❌ Thiếu DISCORD_TOKEN hoặc DISCORD_CLIENT_ID trong .env');
-  process.exit(1);
+
+def extract_json_cookie_entries(content):
+    try:
+        json_data = json.loads(content)
+    except Exception:
+        return []
+
+    if isinstance(json_data, dict):
+        if isinstance(json_data.get("cookies"), list):
+            json_data = json_data["cookies"]
+        elif isinstance(json_data.get("items"), list):
+            json_data = json_data["items"]
+        else:
+            json_data = [json_data]
+    if not isinstance(json_data, list):
+        return []
+
+    entries = []
+    for index, cookie in enumerate(json_data):
+        if not isinstance(cookie, dict):
+            continue
+        domain = cookie.get("domain", "")
+        name = canonicalize_netflix_cookie_name(cookie.get("name", ""))
+        if not is_netflix_cookie_entry(domain, name):
+            continue
+        entries.append(
+            build_netscape_cookie_entry(
+                domain,
+                "TRUE" if str(domain).startswith(".") else "FALSE",
+                cookie.get("path", "/"),
+                "TRUE" if cookie.get("secure", False) else "FALSE",
+                cookie.get("expirationDate", cookie.get("expiration", 0)),
+                name,
+                cookie.get("value", ""),
+                index,
+            )
+        )
+    return entries
+
+
+def build_cookie_bundles_from_entries(entries):
+    if not entries:
+        return []
+
+    entries_by_name = {}
+    for entry in entries:
+        cookie_name = entry.get("name")
+        if not cookie_name:
+            continue
+        entries_by_name.setdefault(cookie_name, []).append(entry)
+    if not entries_by_name:
+        return []
+
+    netflix_id_count = len(entries_by_name.get("NetflixId", []))
+    bundle_count = netflix_id_count or max(len(name_entries) for name_entries in entries_by_name.values())
+    bundles = []
+
+    for bundle_index in range(bundle_count):
+        selected_entries = []
+        for name_entries in entries_by_name.values():
+            if bundle_index < len(name_entries):
+                selected_entries.append(name_entries[bundle_index])
+            elif len(name_entries) == 1:
+                selected_entries.append(name_entries[0])
+
+        if not selected_entries:
+            continue
+
+        selected_entries = sorted(selected_entries, key=lambda item: item.get("position", 0))
+        netscape_text = "\n".join(format_netscape_cookie_entry(entry) for entry in selected_entries)
+        bundles.append(
+            {
+                "index": bundle_index + 1,
+                "total": bundle_count,
+                "netscape_text": netscape_text,
+                "cookies": cookies_dict_from_netscape(netscape_text),
+            }
+        )
+    return bundles
+
+
+def extract_netflix_cookie_bundles(content):
+    for extractor in (extract_json_cookie_entries, extract_netscape_cookie_entries, extract_raw_cookie_entries):
+        bundles = build_cookie_bundles_from_entries(extractor(content))
+        if bundles:
+            return bundles
+    return []
+
+
+def extract_netflix_cookie_text(content):
+    bundles = extract_netflix_cookie_bundles(content)
+    if not bundles:
+        return ""
+    return bundles[0]["netscape_text"]
+
+
+def cookies_dict_from_netscape(netscape_text):
+    cookies = {}
+    for line in netscape_text.splitlines():
+        parts = split_netscape_cookie_columns(line)
+        if len(parts) >= 7:
+            domain = parts[0]
+            name = canonicalize_netflix_cookie_name(parts[5])
+            value = parts[6]
+            if is_netflix_cookie_entry(domain, name):
+                cookies[name] = value
+    return cookies
+
+
+# ─── NFToken ─────────────────────────────────────────────────────────────────
+NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
+NFTOKEN_QUERY_PARAMS = {
+    "appVersion": "15.48.1",
+    "config": '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"false","sharksEnabled":"true"}',
+    "device_type": "NFAPPL-02-",
+    "esn": "NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+    "idiom": "phone",
+    "iosVersion": "15.8.5",
+    "isTablet": "false",
+    "languages": "en-US",
+    "locale": "en-US",
+    "maxDeviceWidth": "375",
+    "model": "saget",
+    "modelType": "IPHONE8-1",
+    "odpAware": "true",
+    "path": '["account","token","default"]',
+    "pathFormat": "graph",
+    "pixelDensity": "2.0",
+    "progressive": "false",
+    "responseFormat": "json",
 }
-client.login(DISCORD_TOKEN);
+NFTOKEN_HEADERS = {
+    "User-Agent": "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
+    "x-netflix.request.attempt": "1",
+    "x-netflix.request.client.user.guid": "A4CS633D7VCBPE2GPK2HL4EKOE",
+    "x-netflix.context.profile-guid": "A4CS633D7VCBPE2GPK2HL4EKOE",
+    "x-netflix.request.routing": '{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',
+    "x-netflix.context.app-version": "15.48.1",
+    "x-netflix.argo.translated": "true",
+    "x-netflix.context.form-factor": "phone",
+    "x-netflix.context.sdk-version": "2012.4",
+    "x-netflix.client.appversion": "15.48.1",
+    "x-netflix.context.max-device-width": "375",
+    "x-netflix.context.ab-tests": "",
+    "x-netflix.tracing.cl.useractionid": "4DC655F2-9C3C-4343-8229-CA1B003C3053",
+    "x-netflix.client.type": "argo",
+    "x-netflix.client.ftl.esn": "NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+    "x-netflix.context.locales": "en-US",
+    "x-netflix.context.top-level-uuid": "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
+    "x-netflix.client.iosversion": "15.8.5",
+    "accept-language": "en-US;q=1",
+    "x-netflix.argo.abtests": "",
+    "x-netflix.context.os-version": "15.8.5",
+    "x-netflix.request.client.context": '{"appState":"foreground"}',
+    "x-netflix.context.ui-flavor": "argo",
+    "x-netflix.argo.nfnsm": "9",
+    "x-netflix.context.pixel-density": "2.0",
+    "x-netflix.request.toplevel.uuid": "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
+    "x-netflix.request.client.timezoneid": "Asia/Dhaka",
+}
+
+
+def create_nftoken(cookie_dict, attempts=3):
+    netflix_id = decode_netflix_value(cookie_dict.get("NetflixId"))
+    if not netflix_id:
+        return None, "Missing required cookies for NFToken"
+
+    headers = dict(NFTOKEN_HEADERS)
+    headers["Cookie"] = f"NetflixId={netflix_id}"
+
+    try:
+        attempts = max(1, int(attempts))
+    except Exception:
+        attempts = 3
+
+    last_error = "NFToken API error"
+    for _ in range(attempts):
+        try:
+            response = requests.get(
+                NFTOKEN_API_URL,
+                params=NFTOKEN_QUERY_PARAMS,
+                headers=headers,
+                timeout=30,
+                verify=False,
+            )
+            if response.status_code != 200:
+                if response.status_code == 403:
+                    last_error = "403"
+                elif response.status_code == 429:
+                    last_error = "429"
+                else:
+                    last_error = f"NFToken API error {response.status_code}"
+                continue
+
+            data = response.json()
+            token_data = (
+                (((data.get("value") or {}).get("account") or {}).get("token") or {}).get("default")
+                or {}
+            )
+            token = decode_netflix_value(token_data.get("token"))
+            expires = token_data.get("expires")
+            if token:
+                return {
+                    "token": token,
+                    "expires_at_utc": get_nftoken_expiry_utc(expires),
+                }, None
+
+            last_error = "Token missing in response"
+        except requests.exceptions.Timeout:
+            last_error = "timeout"
+        except requests.exceptions.ProxyError:
+            last_error = "proxy error"
+        except requests.exceptions.RequestException:
+            last_error = "NFToken API error"
+        except Exception:
+            last_error = "NFToken API error"
+    return None, last_error
+
+
+def get_nftoken_expiry_utc(expires=None):
+    from datetime import datetime, timedelta, timezone
+    normalized = decode_netflix_value(expires)
+    if isinstance(normalized, str):
+        normalized = normalized.strip()
+        if normalized.isdigit():
+            try:
+                normalized = int(normalized)
+            except Exception:
+                normalized = None
+
+    if isinstance(normalized, (int, float)):
+        try:
+            timestamp = int(normalized)
+            if len(str(abs(timestamp))) == 13:
+                timestamp //= 1000
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        except Exception:
+            pass
+
+    return (datetime.utcnow() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def build_nftoken_links(token, mode="both"):
+    normalized_token = decode_netflix_value(token)
+    normalized_mode = str(mode or "false").strip().lower()
+    if not normalized_token or normalized_mode == "false":
+        return []
+
+    links = {}
+    if normalized_mode in ("both", "pc", "desktop", "computer", "true"):
+        links["pc_link"] = f"https://netflix.com/?nftoken={quote(normalized_token, safe='')}&amp;lnktrk=EMP&amp;g=4F25985CB5CBE7D5C6583C1F0A0B4300B5999CD9&amp;lkid=URL_HOME_3&amp;netflixsource=android&amp;utm_source=Android%20App"
+    if normalized_mode in ("both", "mobile", "phone"):
+        links["phone_link"] = f"https://netflix.com/unsupported?nftoken={quote(normalized_token, safe='')}&amp;lnktrk=EMP&amp;g=4F25985CB5CBE7D5C6583C1F0A0B4300B5999CD9&amp;lkid=URL_HOME_3&amp;netflixsource=android&amp;utm_source=Android%20App"
+    return links
+
+
+# ─── MAIN ────────────────────────────────────────────────────────────────────
+def main():
+    raw = sys.stdin.read()
+    if not raw:
+        print(json.dumps({"error": "No input"}))
+        return
+
+    netscape = extract_netflix_cookie_text(raw)
+    if not netscape:
+        print(json.dumps({"error": "No valid Netflix cookie found"}))
+        return
+
+    cookie_dict = cookies_dict_from_netscape(netscape)
+    if not has_required_netflix_cookies(cookie_dict):
+        print(json.dumps({"error": "Missing required cookies"}))
+        return
+
+    nftoken_data, err = create_nftoken(cookie_dict, attempts=3)
+    if err:
+        print(json.dumps({"error": err}))
+        return
+
+    links = build_nftoken_links(nftoken_data["token"], mode="both")
+    result = {
+        "pc_link": links.get("pc_link", ""),
+        "phone_link": links.get("phone_link", ""),
+        "token": nftoken_data["token"],
+        "expires_at_utc": nftoken_data.get("expires_at_utc", ""),
+    }
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
+

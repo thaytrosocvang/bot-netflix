@@ -55,7 +55,7 @@ const countCookies  = () => cookieQueue.length;
 const popCookie     = () => cookieQueue.shift() || null;
 const pushCookies   = (blocks) => { cookieQueue.push(...blocks); return blocks.length; };
 const clearCookies  = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
-const requeueCookie = (block) => { cookieQueue.push(block); };
+// const requeueCookie = (block) => { cookieQueue.push(block); }; // đã bỏ requeue, cookie lỗi bị loại luôn
 
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
@@ -90,17 +90,43 @@ function runConverter(rawCookie) {
       shell: process.platform === 'win32',
     });
     let stdout = '', stderr = '';
+    let resolved = false;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        try { child.kill('SIGTERM'); } catch {}
+        resolve({ error: 'Timeout: Python process quá 30 giây', detail: stderr.slice(-300) });
+      }
+    }, 30000);
+
     child.stdout.on('data', d => { stdout += d; });
     child.stderr.on('data', d => { stderr += d; });
     child.on('close', () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
       const out = stdout.trim();
       if (!out) return resolve({ error: `Không có output`, detail: stderr.slice(-300) });
       try { resolve(JSON.parse(out)); }
       catch { resolve({ error: `Không parse được JSON`, detail: out.slice(-200) }); }
     });
-    child.on('error', err => resolve({ error: `Không thể chạy Python: ${err.message}` }));
-    child.stdin.write(rawCookie);
-    child.stdin.end();
+    child.on('error', err => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      resolve({ error: `Không thể chạy Python: ${err.message}` });
+    });
+    try {
+      child.stdin.write(rawCookie, 'utf8');
+      child.stdin.end();
+    } catch (err) {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve({ error: `Lỗi ghi stdin: ${err.message}` });
+      }
+    }
   });
 }
 
@@ -279,10 +305,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // ── Retry loop: thử tối đa 3 cookie liên tiếp ──────────────────────────
-    const MAX_ATTEMPTS = 3;
+    // ── Retry loop: thử nhiều cookie liên tiếp, bỏ luôn cookie lỗi ───────────
+    const MAX_ATTEMPTS = Math.min(5, countCookies());
     let result = null;
-    let usedCookie = null;
     let attempts = 0;
 
     while (attempts < MAX_ATTEMPTS && countCookies() > 0) {
@@ -290,19 +315,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const rawCookie = popCookie();
       if (!rawCookie) break;
 
-      await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts})...`);
+      await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts}/${MAX_ATTEMPTS})...`);
       result = await runConverter(rawCookie);
 
       if (!result.error) {
-        usedCookie = rawCookie;
-        break;
+        break; // thành công
       }
 
-      console.error(`[attempt ${attempts}] Cookie lỗi:`, result.error, result.detail || '');
-      requeueCookie(rawCookie);
+      // Cookie lỗi -> bỏ luôn, không requeue
+      console.error(`[attempt ${attempts}/${MAX_ATTEMPTS}] Cookie lỗi:`, result.error, result.detail || '');
       result = null;
 
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 2000));
     }
 
     updateStatus();
