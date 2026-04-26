@@ -331,27 +331,60 @@ async function scrapeViaPuppeteer(country) {
     } catch { console.log('[Tầng 3] waitForFunction timeout — tiếp tục...'); }
     await sleep(3000);
 
-    // ── Helper: Hút cookie từ DOM hiện tại ────────────────────────────────
-    const collectDomTexts = () => page.evaluate(() => {
+    // ── Helper: Hút cookie từ DOM hiện tại + bên trong iframes ──────────
+    const collectDomTexts = async () => {
       const found = new Set();
-      document.querySelectorAll('pre, textarea, code, input[type="text"]').forEach(el => {
-        const t = (el.value || el.textContent || '').trim();
-        if (t.length > 50 && t.includes('netflix.com')) found.add(t);
-      });
-      document.querySelectorAll('*').forEach(el => {
-        if (el.children.length > 0) return;
-        const t = (el.textContent || '').trim();
-        if (t.length > 80 && t.includes('netflix.com')) found.add(t);
-      });
-      (document.body.innerText || '').split(/\n{2,}/).forEach(b => {
-        if (b.trim().length > 50 && b.includes('netflix.com')) found.add(b.trim());
-      });
-      return [...found];
-    });
 
-    // ── Helper: Click tất cả copy buttons trên trang hiện tại ────────────
+      // Thu thập từ DOM chính
+      const mainTexts = await page.evaluate(() => {
+        const results = new Set();
+        document.querySelectorAll('pre, textarea, code, input[type="text"]').forEach(el => {
+          const t = (el.value || el.textContent || '').trim();
+          if (t.length > 50 && t.includes('netflix.com')) results.add(t);
+        });
+        document.querySelectorAll('*').forEach(el => {
+          if (el.children.length > 0) return;
+          const t = (el.textContent || '').trim();
+          if (t.length > 80 && t.includes('netflix.com')) results.add(t);
+        });
+        (document.body.innerText || '').split(/\n{2,}/).forEach(b => {
+          if (b.trim().length > 50 && b.includes('netflix.com')) results.add(b.trim());
+        });
+        return [...results];
+      });
+      for (const t of mainTexts) found.add(t);
+
+      // Thu thập từ bên trong từng iframe
+      const frames = page.frames();
+      for (const frame of frames) {
+        if (frame === page.mainFrame()) continue;
+        try {
+          const frameTexts = await frame.evaluate(() => {
+            const results = new Set();
+            document.querySelectorAll('pre, textarea, code, input[type="text"]').forEach(el => {
+              const t = (el.value || el.textContent || '').trim();
+              if (t.length > 50 && t.includes('netflix.com')) results.add(t);
+            });
+            document.querySelectorAll('*').forEach(el => {
+              if (el.children.length > 0) return;
+              const t = (el.textContent || '').trim();
+              if (t.length > 80 && t.includes('netflix.com')) results.add(t);
+            });
+            const bodyText = document.body?.innerText || '';
+            if (bodyText.includes('netflix.com')) results.add(bodyText);
+            return [...results];
+          });
+          for (const t of frameTexts) found.add(t);
+          if (frameTexts.length) console.log(`[Tầng 3 iframe] Hit: ${frame.url().slice(0, 80)} — ${frameTexts.length} texts`);
+        } catch {}
+      }
+
+      return [...found];
+    };
+
+    // ── Helper: Click tất cả copy buttons trên trang hiện tại + iframes ──
     const clickCopyButtons = async () => {
-      const n = await page.evaluate(() => {
+      const clickFn = () => {
         let clicked = 0;
         const keywords = ['COPY','COPY COOKIE','GET COOKIE','📋 COPY','COPY ALL','DOWNLOAD'];
         document.querySelectorAll('button,[role="button"],[class*="copy"],[class*="Copy"]').forEach(el => {
@@ -361,7 +394,12 @@ async function scrapeViaPuppeteer(country) {
           }
         });
         return clicked;
-      });
+      };
+      let n = await page.evaluate(clickFn);
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        try { n += await frame.evaluate(clickFn); } catch {}
+      }
       if (n > 0) await sleep(800 + n * 200);
       return n;
     };
