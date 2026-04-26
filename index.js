@@ -27,6 +27,9 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const GUILD_ID          = process.env.GUILD_ID;
 const ADMIN_IDS         = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 
+// ─── STREAMING CONFIG ─────────────────────────────────────────────────────────
+const STREAMING_URL = 'https://www.twitch.tv/tunkit2302';
+
 // ─── PYTHON BINARY (Windows compatible) ──────────────────────────────────────
 const PYTHON_BIN = (() => {
   const candidates = [
@@ -153,12 +156,14 @@ function planToEmoji(plan = '') {
 
 function updateStatus() {
   const count = countCookies();
+  const statusText = count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin';
+
   client.user?.setPresence({
     status: 'online',
     activities: [{
-      name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
+      name: statusText,
       type: ActivityType.Streaming,
-      url: 'https://www.twitch.tv/tunkit2302',
+      url: STREAMING_URL,
     }],
   });
 }
@@ -168,19 +173,8 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online: ${c.user.tag}`);
   console.log(`🐍 Python: ${PYTHON_BIN}`);
   await registerCommands();
-
-  // Set streaming activity trực tiếp khi khởi động
-  try {
-    await client.user.setActivity('🎬 Netflix của Tún Kịt', {
-      type: ActivityType.Streaming,
-      url: 'https://www.twitch.tv/tunkit2302',
-    });
-    console.log('✅ Đã set Streaming activity');
-  } catch (err) {
-    console.error('❌ Lỗi set activity:', err.message);
-  }
-
   updateStatus();
+  console.log('✅ Đã set Streaming activity (status tím)');
 });
 
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
@@ -363,4 +357,3 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
   process.exit(1);
 }
 client.login(DISCORD_TOKEN);
-
