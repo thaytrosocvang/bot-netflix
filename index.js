@@ -287,11 +287,20 @@ async function scrapeViaPuppeteer(country) {
     const networkTexts = [];
     page.on('response', async (response) => {
       try {
+        const url = response.url();
+        // Bỏ qua assets tĩnh
+        if (/\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|css)(\?|$)/i.test(url)) return;
+        if (url.includes('doubleclick') || url.includes('google-analytics') || url.includes('googletagmanager')) return;
         const ct = response.headers()['content-type'] || '';
         if (!ct.includes('json') && !ct.includes('text')) return;
         const text = await response.text();
+        if (text.length < 20) return;
+        // Log tất cả responses có nội dung đáng chú ý
+        if (text.length > 100) {
+          console.log(`[Network] ${url.slice(0, 100)} (${text.length}b, hasNF=${text.includes('netflix')})`);
+        }
         if (looksLikeNetflixData(text)) {
-          console.log(`[Tầng 3 Network] Hit: ${response.url()}`);
+          console.log(`[Network Hit] ${url.slice(0, 100)}`);
           networkTexts.push(text);
         }
       } catch {}
