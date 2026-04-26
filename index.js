@@ -180,18 +180,22 @@ function planToEmoji(plan = '') {
   return '🎬';
 }
 
-function updateStatus() {
+async function updateStatus() {
   const count = countCookies();
   const statusText = count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin';
 
-  client.user?.setPresence({
-    status: 'online',
-    activities: [{
-      name: statusText,
-      type: ActivityType.Streaming,
-      url: STREAMING_URL,
-    }],
-  });
+  try {
+    await client.user?.setPresence({
+      status: 'online',
+      activities: [{
+        name: statusText,
+        type: ActivityType.Streaming,
+        url: STREAMING_URL,
+      }],
+    });
+  } catch (err) {
+    console.error('❌ Lỗi setPresence:', err.message);
+  }
 }
 
 // ─── READY ────────────────────────────────────────────────────────────────────
