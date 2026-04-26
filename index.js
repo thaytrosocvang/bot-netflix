@@ -435,6 +435,18 @@ async function scrapeViaPuppeteer(country) {
 
     console.log(`[Tầng 3] Tìm thấy ${countryButtons.length} country buttons có 🍪`);
 
+    // Dump HTML của button đầu tiên để hiểu cấu trúc
+    const firstBtnHtml = await page.evaluate(() => {
+      const allBtns = [...document.querySelectorAll('button,[role="button"]')];
+      for (const btn of allBtns) {
+        if ((btn.textContent || '').includes('🍪')) {
+          return btn.parentElement?.outerHTML?.slice(0, 500) || btn.outerHTML?.slice(0, 500);
+        }
+      }
+      return null;
+    });
+    if (firstBtnHtml) console.log(`[Tầng 3 BtnHTML] ${firstBtnHtml}`);
+
     // Click lần lượt từng country button, mỗi lần thu thập cookie
     const allDomTexts = [];
     const maxClicks = country ? countryButtons.length : Math.min(countryButtons.length, 10);
