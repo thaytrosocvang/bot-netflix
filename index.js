@@ -470,6 +470,10 @@ async function scrapeViaPuppeteer(country) {
         console.log(`[PostClick] netflixLines=${JSON.stringify(postClickInfo.netflixLines)}`);
         console.log(`[PostClick] newBtns=${JSON.stringify(postClickInfo.newBtns)}`);
 
+        // Log URL của tất cả frames
+        const frameUrls = page.frames().map(f => f.url()).filter(u => u && u !== 'about:blank');
+        console.log(`[PostClick] frameUrls=${JSON.stringify(frameUrls)}`);
+
         // Thu thập cookie từ DOM sau khi click
         const texts = await collectDomTexts();
         for (const t of texts) {
