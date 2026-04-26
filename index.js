@@ -157,7 +157,8 @@ function updateStatus() {
     status: count > 0 ? 'online' : 'idle',
     activities: [{
       name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
-      type: ActivityType.Watching,
+      type: ActivityType.Streaming,
+      url: 'https://www.twitch.tv/tunkit2302',
     }],
   });
 }
