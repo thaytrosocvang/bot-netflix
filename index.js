@@ -472,12 +472,31 @@ async function scrapeViaPuppeteer(country) {
           netflixLines: document.body.innerText.split('\n').filter(l => l.includes('netflix.com')).slice(0, 3),
           newBtns:   [...document.querySelectorAll('button,[role="button"]')]
                        .map(b => b.textContent.trim().slice(0, 30)).filter(t => t).slice(0, 8),
+          // Tìm tất cả elements có chứa netflix (kể cả hidden)
+          hiddenNF:  (() => {
+            const results = [];
+            document.querySelectorAll('*').forEach(el => {
+              const t = (el.textContent || '').trim();
+              if (t.includes('netflix.com') && t.length < 5000) {
+                const style = window.getComputedStyle(el);
+                results.push({
+                  tag: el.tagName,
+                  cls: el.className?.toString?.().slice(0, 40) || '',
+                  display: style.display,
+                  visibility: style.visibility,
+                  text: t.slice(0, 100),
+                });
+              }
+            });
+            return results.slice(0, 5);
+          })(),
         }));
         console.log(`[PostClick] bodyLen=${postClickInfo.bodyLen} hasNF=${postClickInfo.hasNF} iframes=${postClickInfo.iframes}`);
         console.log(`[PostClick] modals=${JSON.stringify(postClickInfo.modals)}`);
         console.log(`[PostClick] allText=${JSON.stringify(postClickInfo.allText)}`);
         console.log(`[PostClick] netflixLines=${JSON.stringify(postClickInfo.netflixLines)}`);
         console.log(`[PostClick] newBtns=${JSON.stringify(postClickInfo.newBtns)}`);
+        console.log(`[PostClick] hiddenNF=${JSON.stringify(postClickInfo.hiddenNF)}`);
 
         // Log URL của tất cả frames
         const frameUrls = page.frames().map(f => f.url()).filter(u => u && u !== 'about:blank');
