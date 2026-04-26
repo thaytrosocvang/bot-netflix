@@ -185,14 +185,16 @@ async function updateStatus() {
   const statusText = count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin';
 
   try {
-    await client.user?.setPresence({
+    console.log('[DEBUG] Setting presence:', statusText, 'URL:', STREAMING_URL);
+    const result = await client.user?.setPresence({
       status: 'online',
       activities: [{
         name: statusText,
-        type: ActivityType.Streaming,
+        type: 1, // ActivityType.Streaming = 1
         url: STREAMING_URL,
       }],
     });
+    console.log('[DEBUG] setPresence result:', result ? 'OK' : 'undefined');
   } catch (err) {
     console.error('❌ Lỗi setPresence:', err.message);
   }
@@ -203,8 +205,14 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online: ${c.user.tag}`);
   console.log(`🐍 Python: ${PYTHON_BIN}`);
   await registerCommands();
-  updateStatus();
-  console.log('✅ Đã set Streaming activity (status tím)');
+  // Delay nhỏ để Discord API sẵn sàng trước khi set presence
+  setTimeout(() => {
+    updateStatus().then(() => {
+      console.log('✅ Đã set Streaming activity (status tím)');
+    }).catch(err => {
+      console.error('❌ Lỗi set status:', err.message);
+    });
+  }, 2000);
 });
 
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
