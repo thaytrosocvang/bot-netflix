@@ -27,22 +27,23 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const GUILD_ID          = process.env.GUILD_ID;
 const ADMIN_IDS         = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 
-// ─── PYTHON BINARY ────────────────────────────────────────────────────────────
+// ─── PYTHON BINARY (Windows compatible) ──────────────────────────────────────
 const PYTHON_BIN = (() => {
   const candidates = [
+    path.join(__dirname, 'venv', 'Scripts', 'python.exe'),
     path.join(__dirname, 'venv', 'bin', 'python3'),
     path.join(__dirname, 'venv', 'bin', 'python'),
-    'python3',
     'python',
+    'python3',
   ];
   for (const p of candidates) {
-    if (p.startsWith('/') || p.startsWith('.')) {
+    if (p.includes('venv')) {
       if (fs.existsSync(p)) return p;
     } else {
       return p;
     }
   }
-  return 'python3';
+  return 'python';
 })();
 
 // ─── IN-MEMORY COOKIE QUEUE ───────────────────────────────────────────────────
@@ -51,6 +52,7 @@ const countCookies = () => cookieQueue.length;
 const popCookie    = () => cookieQueue.shift() || null;
 const pushCookies  = (blocks) => { cookieQueue.push(...blocks); return blocks.length; };
 const clearCookies = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
+const requeueCookie = (block) => { cookieQueue.push(block); }; // đẩy lại cuối queue
 
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
@@ -80,15 +82,18 @@ function parseCookieFileIntoBlocks(rawText) {
 // ─── CONVERTER ────────────────────────────────────────────────────────────────
 function runConverter(rawCookie) {
   return new Promise((resolve) => {
-    const child = spawn(PYTHON_BIN, [path.join(__dirname, 'convert_single.py')], { cwd: __dirname });
+    const child = spawn(PYTHON_BIN, [path.join(__dirname, 'convert_single.py')], {
+      cwd: __dirname,
+      shell: process.platform === 'win32', // cần trên Windows
+    });
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d; });
     child.stderr.on('data', d => { stderr += d; });
     child.on('close', () => {
       const out = stdout.trim();
-      if (!out) return resolve({ error: `Không có output. Stderr: ${stderr.slice(-300)}` });
+      if (!out) return resolve({ error: `Không có output`, detail: stderr.slice(-300) });
       try { resolve(JSON.parse(out)); }
-      catch { resolve({ error: `Không parse được JSON: ${out.slice(-200)}` }); }
+      catch { resolve({ error: `Không parse được JSON`, detail: out.slice(-200) }); }
     });
     child.on('error', err => resolve({ error: `Không thể chạy Python: ${err.message}` }));
     child.stdin.write(rawCookie);
@@ -149,7 +154,7 @@ function planToEmoji(plan = '') {
 function updateStatus() {
   const count = countCookies();
   client.user?.setPresence({
-    status: 'idle',
+    status: count > 0 ? 'online' : 'idle',
     activities: [{
       name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
       type: ActivityType.Watching,
@@ -267,25 +272,65 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    const rawCookie = popCookie();
-    if (!rawCookie) {
-      await interaction.editReply('❌ Hết cookie! Vui lòng thử lại.');
-      return;
+    // ── Retry loop: thử tối đa 3 cookie liên tiếp ──────────────────────────
+    const MAX_ATTEMPTS = 3;
+    let result = null;
+    let usedCookie = null;
+    let attempts = 0;
+
+    while (attempts < MAX_ATTEMPTS && countCookies() > 0) {
+      attempts++;
+      const rawCookie = popCookie();
+      if (!rawCookie) break;
+
+      await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts})...`);
+      result = await runConverter(rawCookie);
+
+      if (!result.error) {
+        usedCookie = rawCookie;
+        break; // thành công
+      }
+
+      // Thất bại — log và đẩy cookie về cuối queue để dùng lại sau
+      console.error(`[attempt ${attempts}] Cookie lỗi:`, result.error, result.detail || '');
+      requeueCookie(rawCookie); // ← đẩy lại thay vì bỏ luôn
+      result = null;
+
+      // Delay nhỏ giữa các lần thử để tránh rate limit
+      await new Promise(r => setTimeout(r, 1500));
     }
 
-    await interaction.editReply('⏳ Đang tạo link NFToken, vui lòng chờ...');
-    const result = await runConverter(rawCookie);
     updateStatus();
 
-    if (result.error) {
-      console.error('[runConverter]', result.error);
+    if (!result || result.error) {
       await interaction.editReply(
-        `🍪❌ Cookie bị lỗi, vui lòng bấm lại để nhận token mới — còn **${countCookies()}** cookie khác.`
+        `⚠️ Không tạo được link sau **${attempts}** lần thử.\n` +
+        `Có thể do proxy không ổn định hoặc Netflix đang throttle.\n` +
+        `Còn **${countCookies()}** cookie trong kho — vui lòng thử lại sau ít phút.`
       );
       return;
     }
 
     const link = mode === 'phone' ? result.phone_link : result.pc_link;
+
+    if (!link) {
+      // Có result nhưng thiếu link mode được chọn
+      const altLink = mode === 'phone' ? result.pc_link : result.phone_link;
+      const altLabel = mode === 'phone' ? '🖥️ Link Máy Tính' : '📱 Link Điện Thoại';
+      const embed = new EmbedBuilder()
+        .setColor(0xe67e22)
+        .setTitle('⚠️ Chỉ có link thay thế')
+        .setDescription(`Không có link ${mode === 'phone' ? 'Điện Thoại' : 'Máy Tính'}, dùng link thay thế bên dưới:`)
+        .addFields(
+          { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
+          { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
+          { name: '🌍 Country',                       value: result.country || '??',        inline: true },
+          { name: altLabel, value: altLink || '(không có link nào)' },
+        )
+        .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
+      await interaction.editReply({ content: '', embeds: [embed] });
+      return;
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
@@ -294,7 +339,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
         { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
         { name: '🌍 Country',                       value: result.country || '??',        inline: true },
-        { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link || '(không có link)' },
+        { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link },
       )
       .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
 

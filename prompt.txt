@@ -1,0 +1,4 @@
+Đọc toàn bộ project này.
+Cho tôi biết file nào quan trọng.
+Kiểm tra lỗi trong index.js.
+Chưa sửa file, chỉ phân tích trước.

@@ -18,6 +18,7 @@ import tempfile
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Config tối giản: bật nftoken both, tắt notifications, tắt emoji trong txt
+# Tăng retry và timeout để ổn định hơn
 MINIMAL_CONFIG = """\
 nftoken: "both"
 
@@ -40,11 +41,11 @@ display:
   mode: "log"
 
 retries:
-  error_proxy_attempts: 3
-  nftoken_attempts: 5
+  error_proxy_attempts: 6
+  nftoken_attempts: 8
 
 performance:
-  request_timeout_seconds: 20
+  request_timeout_seconds: 30
   fallback_account_page: false
   retry_incomplete_info: false
   nftoken_for_free: false
@@ -83,7 +84,6 @@ def _extract_nftoken_links(content: str):
     """
 
     # ── 1. Tìm theo label ──────────────────────────────────────────────────
-    # Các biến thể label checker có thể dùng
     pc_label_pattern    = r"(?:PC|Desktop|Computer)\s*(?:Login|NFToken|Link)\s*:\s*(https?://\S+)"
     phone_label_pattern = r"(?:Phone|Mobile)\s*(?:Login|NFToken|Link)\s*:\s*(https?://\S+)"
 
@@ -94,10 +94,7 @@ def _extract_nftoken_links(content: str):
     phone_link = phone_m.group(1).strip() if phone_m else None
 
     # ── 2. Fallback theo URL pattern ───────────────────────────────────────
-    # PC token: netflix.com/?nftoken=  (không có /unsupported)
-    # Phone token: netflix.com/unsupported?nftoken=
     if not pc_link:
-        # Tìm tất cả URL nftoken, loại ra URL có /unsupported
         all_nftokens = re.findall(r"https?://[^\s\r\n]*nftoken=[^\s\r\n]+", content, re.IGNORECASE)
         for url in all_nftokens:
             if "unsupported" not in url.lower():
@@ -123,7 +120,7 @@ def convert(cookie_text: str) -> dict:
         with open(os.path.join(cookies_dir, "cookie.txt"), "w", encoding="utf-8") as f:
             f.write(cookie_text)
 
-        # Ghi config tối giản (bật nftoken)
+        # Ghi config tối giản (bật nftoken, retry cao hơn)
         with open(os.path.join(tmpdir, "config.yml"), "w", encoding="utf-8") as f:
             f.write(MINIMAL_CONFIG)
 
@@ -135,7 +132,8 @@ def convert(cookie_text: str) -> dict:
         else:
             open(proxy_dst, "w").close()
 
-        # Chạy main.py từ tmpdir, pipe stdin: Enter (welcome) + "1\n" (1 thread)
+        # Chạy main.py từ tmpdir
+        # input: Enter (welcome screen) + "1\n" (1 thread)
         main_py = os.path.join(BASE_DIR, "main.py")
         proc = subprocess.run(
             [sys.executable, main_py],
@@ -143,7 +141,7 @@ def convert(cookie_text: str) -> dict:
             capture_output=True,
             text=True,
             cwd=tmpdir,
-            timeout=120,
+            timeout=180,  # tăng từ 120 lên 180 giây
         )
 
         # Tìm file output (tránh thư mục Duplicate/failed/broken)
@@ -180,12 +178,17 @@ def convert(cookie_text: str) -> dict:
                     "phone_link": phone_link or "",
                 }
 
-        # Không tạo được NFToken — cookie chết hoặc không có proxy
-        stderr_tail = proc.stderr[-600:] if proc.stderr else ""
-        return {"error": "Không tạo được NFToken. Cookie có thể đã hết hạn hoặc cần proxy.", "detail": stderr_tail}
+        # Không tạo được NFToken — log đầy đủ để debug
+        stderr_tail = proc.stderr[-800:] if proc.stderr else ""
+        stdout_tail = proc.stdout[-800:] if proc.stdout else ""
+        return {
+            "error": "Không tạo được NFToken. Cookie có thể đã hết hạn hoặc proxy không ổn định.",
+            "detail": stderr_tail,
+            "stdout": stdout_tail,
+        }
 
     except subprocess.TimeoutExpired:
-        return {"error": "Timeout: checker chạy quá 120 giây."}
+        return {"error": "Timeout: checker chạy quá 180 giây."}
     except Exception as exc:
         return {"error": str(exc)}
     finally:
