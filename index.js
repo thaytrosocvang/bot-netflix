@@ -48,11 +48,11 @@ const PYTHON_BIN = (() => {
 
 // ─── IN-MEMORY COOKIE QUEUE ───────────────────────────────────────────────────
 const cookieQueue = [];
-const countCookies = () => cookieQueue.length;
-const popCookie    = () => cookieQueue.shift() || null;
-const pushCookies  = (blocks) => { cookieQueue.push(...blocks); return blocks.length; };
-const clearCookies = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
-const requeueCookie = (block) => { cookieQueue.push(block); }; // đẩy lại cuối queue
+const countCookies  = () => cookieQueue.length;
+const popCookie     = () => cookieQueue.shift() || null;
+const pushCookies   = (blocks) => { cookieQueue.push(...blocks); return blocks.length; };
+const clearCookies  = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
+const requeueCookie = (block) => { cookieQueue.push(block); };
 
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
@@ -84,7 +84,7 @@ function runConverter(rawCookie) {
   return new Promise((resolve) => {
     const child = spawn(PYTHON_BIN, [path.join(__dirname, 'convert_single.py')], {
       cwd: __dirname,
-      shell: process.platform === 'win32', // cần trên Windows
+      shell: process.platform === 'win32',
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d; });
@@ -154,7 +154,7 @@ function planToEmoji(plan = '') {
 function updateStatus() {
   const count = countCookies();
   client.user?.setPresence({
-    status: count > 0 ? 'online' : 'idle',
+    status: 'online',
     activities: [{
       name: count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin',
       type: ActivityType.Streaming,
@@ -168,6 +168,18 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online: ${c.user.tag}`);
   console.log(`🐍 Python: ${PYTHON_BIN}`);
   await registerCommands();
+
+  // Set streaming activity trực tiếp khi khởi động
+  try {
+    await client.user.setActivity('🎬 Netflix của Tún Kịt', {
+      type: ActivityType.Streaming,
+      url: 'https://www.twitch.tv/tunkit2302',
+    });
+    console.log('✅ Đã set Streaming activity');
+  } catch (err) {
+    console.error('❌ Lỗi set activity:', err.message);
+  }
+
   updateStatus();
 });
 
@@ -289,15 +301,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!result.error) {
         usedCookie = rawCookie;
-        break; // thành công
+        break;
       }
 
-      // Thất bại — log và đẩy cookie về cuối queue để dùng lại sau
       console.error(`[attempt ${attempts}] Cookie lỗi:`, result.error, result.detail || '');
-      requeueCookie(rawCookie); // ← đẩy lại thay vì bỏ luôn
+      requeueCookie(rawCookie);
       result = null;
 
-      // Delay nhỏ giữa các lần thử để tránh rate limit
       await new Promise(r => setTimeout(r, 1500));
     }
 
@@ -315,8 +325,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const link = mode === 'phone' ? result.phone_link : result.pc_link;
 
     if (!link) {
-      // Có result nhưng thiếu link mode được chọn
-      const altLink = mode === 'phone' ? result.pc_link : result.phone_link;
+      const altLink  = mode === 'phone' ? result.pc_link : result.phone_link;
       const altLabel = mode === 'phone' ? '🖥️ Link Máy Tính' : '📱 Link Điện Thoại';
       const embed = new EmbedBuilder()
         .setColor(0xe67e22)
