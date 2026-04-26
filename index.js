@@ -411,7 +411,26 @@ async function scrapeViaPuppeteer(country) {
         console.log(`[Tầng 3] Đã click: ${btnText.slice(0, 40)}`);
 
         // Chờ panel/modal/textarea xuất hiện
-        await sleep(2000);
+        await sleep(3000);
+
+        // Debug: xem DOM thay đổi gì sau khi click
+        const postClickInfo = await page.evaluate(() => ({
+          bodyLen:   document.body.innerText.length,
+          hasNF:     document.body.innerText.includes('netflix.com'),
+          modals:    [...document.querySelectorAll('[class*="modal"],[class*="Modal"],[class*="dialog"],[class*="Dialog"],[role="dialog"]')]
+                       .map(m => m.innerText.slice(0, 100)).filter(t => t).slice(0, 3),
+          allText:   [...document.querySelectorAll('pre,textarea,code,input')]
+                       .map(e => (e.value || e.textContent || '').trim().slice(0, 80)).filter(t => t).slice(0, 5),
+          iframes:   document.querySelectorAll('iframe').length,
+          netflixLines: document.body.innerText.split('\n').filter(l => l.includes('netflix.com')).slice(0, 3),
+          newBtns:   [...document.querySelectorAll('button,[role="button"]')]
+                       .map(b => b.textContent.trim().slice(0, 30)).filter(t => t).slice(0, 8),
+        }));
+        console.log(`[PostClick] bodyLen=${postClickInfo.bodyLen} hasNF=${postClickInfo.hasNF} iframes=${postClickInfo.iframes}`);
+        console.log(`[PostClick] modals=${JSON.stringify(postClickInfo.modals)}`);
+        console.log(`[PostClick] allText=${JSON.stringify(postClickInfo.allText)}`);
+        console.log(`[PostClick] netflixLines=${JSON.stringify(postClickInfo.netflixLines)}`);
+        console.log(`[PostClick] newBtns=${JSON.stringify(postClickInfo.newBtns)}`);
 
         // Thu thập cookie từ DOM sau khi click
         const texts = await collectDomTexts();
