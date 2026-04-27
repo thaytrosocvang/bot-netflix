@@ -57,8 +57,10 @@ const pushCookies   = (blocks) => { cookieQueue.push(...blocks); return blocks.l
 const clearCookies  = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
 // const requeueCookie = (block) => { cookieQueue.push(block); }; // đã bỏ requeue, cookie lỗi bị loại luôn
 
-// ─── USER TOKEN USAGE TRACKER ────────────────────────────────────────────────
-const userTokenUsage = new Map();
+// ─── USER TOKEN SESSION STORAGE ─────────────────────────────────────────────
+// Mỗi lần /start pop 1 cookie, tạo token 1 lần; user có thể lấy cả phone + pc
+// từ cùng 1 token. Muốn tạo thêm phải /start mới.
+const userTokenData = new Map();
 
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
@@ -223,6 +225,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── /start ─────────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'start') {
+    // Reset session cũ -> muốn tạo thêm phải /start mới
+    userTokenData.delete(interaction.user.id);
     const count = countCookies();
 
     const row = new ActionRowBuilder().addComponents(
@@ -313,55 +317,67 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── Buttons ────────────────────────────────────────────────────────────────
   if (interaction.isButton() && (interaction.customId === 'btn_phone' || interaction.customId === 'btn_pc')) {
     const userId = interaction.user.id;
-    const used = userTokenUsage.get(userId) || 0;
-    if (used >= 2) {
-      await interaction.reply({ content: '❌ Bạn đã sử dụng hết 2 lần tạo token! Vui lòng chờ reset.', ephemeral: true });
-      return;
-    }
-
     const mode = interaction.customId === 'btn_phone' ? 'phone' : 'pc';
     await interaction.deferReply();
 
-    if (countCookies() === 0) {
-      await interaction.editReply('❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.');
-      return;
-    }
+    let data = userTokenData.get(userId);
 
-    // ── Retry loop: thử nhiều cookie liên tiếp, bỏ luôn cookie lỗi ───────────
-    const MAX_ATTEMPTS = Math.min(5, countCookies());
-    let result = null;
-    let attempts = 0;
-
-    while (attempts < MAX_ATTEMPTS && countCookies() > 0) {
-      attempts++;
-      const rawCookie = popCookie();
-      if (!rawCookie) break;
-
-      await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts}/${MAX_ATTEMPTS})...`);
-      result = await runConverter(rawCookie);
-
-      if (!result.error) {
-        break; // thành công
+    // Nếu chưa có token cho session này -> pop cookie và tạo
+    if (!data) {
+      if (countCookies() === 0) {
+        await interaction.editReply('❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.');
+        return;
       }
 
-      // Cookie lỗi -> bỏ luôn, không requeue
-      console.error(`[attempt ${attempts}/${MAX_ATTEMPTS}] Cookie lỗi:`, result.error, result.detail || '');
-      result = null;
+      const MAX_ATTEMPTS = Math.min(5, countCookies());
+      let result = null;
+      let attempts = 0;
 
-      await new Promise(r => setTimeout(r, 2000));
+      while (attempts < MAX_ATTEMPTS && countCookies() > 0) {
+        attempts++;
+        const rawCookie = popCookie();
+        if (!rawCookie) break;
+
+        await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts}/${MAX_ATTEMPTS})...`);
+        result = await runConverter(rawCookie);
+
+        if (!result.error) break;
+
+        console.error(`[attempt ${attempts}/${MAX_ATTEMPTS}] Cookie lỗi:`, result.error, result.detail || '');
+        result = null;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      updateStatus();
+
+      if (!result || result.error) {
+        await interaction.editReply(
+          `⚠️ Không tạo được link sau **${attempts}** lần thử.\n` +
+          `Có thể do proxy không ổn định hoặc Netflix đang throttle.\n` +
+          `Còn **${countCookies()}** cookie trong kho — vui lòng thử lại sau ít phút.`
+        );
+        return;
+      }
+
+      data = { result, claimedPhone: false, claimedPc: false };
+      userTokenData.set(userId, data);
     }
 
-    updateStatus();
-
-    if (!result || result.error) {
-      await interaction.editReply(
-        `⚠️ Không tạo được link sau **${attempts}** lần thử.\n` +
-        `Có thể do proxy không ổn định hoặc Netflix đang throttle.\n` +
-        `Còn **${countCookies()}** cookie trong kho — vui lòng thử lại sau ít phút.`
-      );
+    // Kiểm tra đã lấy link mode này chưa
+    if (mode === 'phone' && data.claimedPhone) {
+      await interaction.editReply('❌ Bạn đã lấy link Điện Thoại rồi! Dùng `/start` để tạo mới.');
+      return;
+    }
+    if (mode === 'pc' && data.claimedPc) {
+      await interaction.editReply('❌ Bạn đã lấy link Máy Tính rồi! Dùng `/start` để tạo mới.');
       return;
     }
 
+    // Đánh dấu đã lấy
+    if (mode === 'phone') data.claimedPhone = true;
+    else data.claimedPc = true;
+
+    const result = data.result;
     const link = mode === 'phone' ? result.phone_link : result.pc_link;
 
     if (!link) {
@@ -379,31 +395,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
         )
         .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
       await interaction.editReply({ content: '', embeds: [embed] });
-      userTokenUsage.set(userId, used + 1);
-      try {
-        await interaction.channel.send({
-          content: `<@${userId}> đã tạo token thành công! 🎉`,
-          embeds: [new EmbedBuilder().setImage('https://c.tenor.com/VcmLE85OOPUAAAAd/tenor.gif').setColor(0x2ecc71)],
-        });
-      } catch (e) {
-        console.error('Lỗi gửi GIF:', e.message);
-      }
-      return;
+    } else {
+      const embed = new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle('✅ Tạo Link Thành Công!')
+        .addFields(
+          { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
+          { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
+          { name: '🌍 Country',                       value: result.country || '??',        inline: true },
+          { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link },
+        )
+        .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
+      await interaction.editReply({ content: '', embeds: [embed] });
     }
 
-    const embed = new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('✅ Tạo Link Thành Công!')
-      .addFields(
-        { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
-        { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
-        { name: '🌍 Country',                       value: result.country || '??',        inline: true },
-        { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link },
-      )
-      .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
-
-    await interaction.editReply({ content: '', embeds: [embed] });
-    userTokenUsage.set(userId, used + 1);
+    // Gửi GIF ping user
     try {
       await interaction.channel.send({
         content: `<@${userId}> đã tạo token thành công! 🎉`,
@@ -421,3 +427,4 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
   process.exit(1);
 }
 client.login(DISCORD_TOKEN);
+
