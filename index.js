@@ -57,6 +57,9 @@ const pushCookies   = (blocks) => { cookieQueue.push(...blocks); return blocks.l
 const clearCookies  = () => { const n = cookieQueue.length; cookieQueue.length = 0; return n; };
 // const requeueCookie = (block) => { cookieQueue.push(block); }; // đã bỏ requeue, cookie lỗi bị loại luôn
 
+// ─── USER TOKEN USAGE TRACKER ────────────────────────────────────────────────
+const userTokenUsage = new Map();
+
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parseCookieFileIntoBlocks(rawText) {
   const blocks = [];
@@ -309,6 +312,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── Buttons ────────────────────────────────────────────────────────────────
   if (interaction.isButton() && (interaction.customId === 'btn_phone' || interaction.customId === 'btn_pc')) {
+    const userId = interaction.user.id;
+    const used = userTokenUsage.get(userId) || 0;
+    if (used >= 2) {
+      await interaction.reply({ content: '❌ Bạn đã sử dụng hết 2 lần tạo token! Vui lòng chờ reset.', ephemeral: true });
+      return;
+    }
+
     const mode = interaction.customId === 'btn_phone' ? 'phone' : 'pc';
     await interaction.deferReply();
 
@@ -369,6 +379,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         )
         .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
       await interaction.editReply({ content: '', embeds: [embed] });
+      userTokenUsage.set(userId, used + 1);
+      try {
+        await interaction.channel.send({
+          content: `<@${userId}> đã tạo token thành công! 🎉`,
+          embeds: [new EmbedBuilder().setImage('https://c.tenor.com/VcmLE85OOPUAAAAd/tenor.gif').setColor(0x2ecc71)],
+        });
+      } catch (e) {
+        console.error('Lỗi gửi GIF:', e.message);
+      }
       return;
     }
 
@@ -384,6 +403,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
 
     await interaction.editReply({ content: '', embeds: [embed] });
+    userTokenUsage.set(userId, used + 1);
+    try {
+      await interaction.channel.send({
+        content: `<@${userId}> đã tạo token thành công! 🎉`,
+        embeds: [new EmbedBuilder().setImage('https://c.tenor.com/VcmLE85OOPUAAAAd/tenor.gif').setColor(0x2ecc71)],
+      });
+    } catch (e) {
+      console.error('Lỗi gửi GIF:', e.message);
+    }
   }
 });
 
