@@ -296,6 +296,67 @@ def cookies_dict_from_netscape(netscape_text):
     return cookies
 
 
+# ─── Account info fetcher ────────────────────────────────────────────────────
+NETFLIX_ACCOUNT_URL = "https://www.netflix.com/account/membership"
+
+def fetch_account_info(cookie_dict):
+    netflix_id = decode_netflix_value(cookie_dict.get("NetflixId"))
+    if not netflix_id:
+        return {}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Encoding": "identity",
+    }
+    try:
+        resp = requests.get(
+            NETFLIX_ACCOUNT_URL,
+            headers=headers,
+            cookies={"NetflixId": netflix_id},
+            timeout=15,
+            verify=False,
+        )
+        if resp.status_code != 200 or not resp.text:
+            return {}
+        text = resp.text
+    except Exception:
+        return {}
+
+    info = {}
+    # email
+    email_match = re.search(r'"emailAddress"\s*:\s*"([^"]+)"', text)
+    if not email_match:
+        email_match = re.search(r'"email"\s*:\s*"([^"]+)"', text)
+    if not email_match:
+        email_match = re.search(r'"loginId"\s*:\s*"([^"]+)"', text)
+    if email_match:
+        info["email"] = decode_netflix_value(email_match.group(1))
+
+    # country
+    country_match = re.search(r'"countryOfSignup"\s*:\s*"([^"]+)"', text)
+    if not country_match:
+        country_match = re.search(r'"currentCountry"\s*:\s*"([^"]+)"', text)
+    if country_match:
+        info["country"] = decode_netflix_value(country_match.group(1))
+
+    # plan
+    plan_match = re.search(r'"localizedPlanName"\s*:\s*"([^"]+)"', text)
+    if not plan_match:
+        plan_match = re.search(r'"planName"\s*:\s*"([^"]+)"', text)
+    if not plan_match:
+        # try currentPlan -> plan -> name
+        plan_match = re.search(r'"currentPlan"\s*:\s*\{[\s\S]*?"plan"\s*:\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"', text)
+    if not plan_match:
+        plan_match = re.search(r'"nextPlan"\s*:\s*\{[\s\S]*?"plan"\s*:\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"', text)
+    if plan_match:
+        info["plan"] = decode_netflix_value(plan_match.group(1))
+
+    return info
+
+
 # ─── NFToken ─────────────────────────────────────────────────────────────────
 NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
 NFTOKEN_QUERY_PARAMS = {
@@ -472,6 +533,11 @@ def main():
         "token": nftoken_data["token"],
         "expires_at_utc": nftoken_data.get("expires_at_utc", ""),
     }
+
+    # Fetch account details so Discord embed shows email/plan/country
+    account_info = fetch_account_info(cookie_dict)
+    result.update(account_info)
+
     print(json.dumps(result))
 
 
