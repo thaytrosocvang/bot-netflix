@@ -6,18 +6,19 @@
 - [x] Update `netflix/index.js` to use application emojis
 - [x] Syntax check passed (both `index.js` & `utils/emoji.js`)
 
-## Next Steps for User
+## What you ONLY need to upload (optional)
 
-1. **Upload Application Emojis** vào Discord Developer Portal:
-   - Truy cập: https://discord.com/developers/applications
-   - Chọn bot → tab **Emoji**
-   - Upload ảnh PNG/JPG/GIF với tên **chính xác** như bên dưới:
-     - `netflix` – Logo Netflix
-     - `premium`, `standard`, `basic`, `mobile` – Icon các gói
-     - `phone`, `pc`, `guide` – Icon thiết bị / hướng dẫn
-     - `country_us`, `country_vn`, `country_jp`... – Cờ quốc gia
-     - `email`, `files`, `trash`, `success`, `error`, `warning`, `loading`, `party`
+Bot đã **tự động sinh cờ quốc gia Unicode** (🇺🇸 🇻🇳 🇯🇵 🇰🇷 🇬🇧 …) từ country code, **không cần upload cờ từng nước**.
 
-2. **Restart bot** (`node index.js`) để `initAppEmojis()` tự động fetch ID emoji mới.
+Bạn chỉ cần upload vài emoji đặc biệt nếu muốn (hoàn toàn tùy chọn):
+- `netflix` – Logo Netflix
+- `premium`, `standard`, `basic`, `mobile` – Icon gói (nếu muốn đẹp hơn Unicode)
+- `phone`, `pc`, `guide` – Icon thiết bị
 
-3. Nếu chưa upload emoji, bot sẽ tự động fallback về emoji Unicode mặc định (🎬, 💎, ⭐, 🔵, 📱, 🖥️, 🌍, v.v.)
+## How to upload (if you want custom ones)
+
+1. Vào https://discord.com/developers/applications → chọn bot → tab **Emoji**.
+2. Upload ảnh PNG/JPG/GIF, đặt tên **chính xác** như trên.
+3. Restart bot (`node index.js`).
+4. Nếu chưa upload, bot tự động dùng emoji Unicode mặc định (🎬, 💎, ⭐, 📱, 🖥️, v.v.).
+

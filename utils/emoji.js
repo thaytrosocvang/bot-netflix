@@ -98,13 +98,32 @@ export function btnEmoji(name) {
 }
 
 /**
- * Quick helper for country-flag application emojis.
- * If you upload flag images named like "country_us", "country_vn", etc.
- * @param {string} countryCode - e.g. "US", "VN", "JP"
+ * Return a country-flag emoji.
+ * Priority:
+ *   1. Application emoji named "country_xx" (custom flag image you uploaded).
+ *   2. Auto-generated Unicode regional-indicator flag (🇺🇸 🇻🇳 🇯🇵 …).
+ *   3. Fallback 🌍 if code is invalid.
+ *
+ * @param {string} countryCode - 2-letter ISO code, e.g. "US", "VN", "JP"
  * @returns {string} emoji string
  */
 export function flag(countryCode) {
-  return e(`country_${countryCode.toLowerCase()}`) || '🌍';
+  const code = (countryCode || '').trim().toUpperCase();
+
+  // 1. Try custom application emoji first (e.g. country_us)
+  const custom = e(`country_${code.toLowerCase()}`);
+  if (custom) return custom;
+
+  // 2. Auto-generate Unicode regional-indicator flag
+  //    A = 0x1F1E6, B = 0x1F1E7, … Z = 0x1F1FF
+  if (code.length === 2 && /^[A-Z]{2}$/.test(code)) {
+    const regionalIndicatorOffset = 0x1F1E6; // 🇦
+    const charA = code.charCodeAt(0) - 65 + regionalIndicatorOffset;
+    const charB = code.charCodeAt(1) - 65 + regionalIndicatorOffset;
+    return String.fromCodePoint(charA, charB);
+  }
+
+  return '🌍';
 }
 
 /**

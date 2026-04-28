@@ -258,6 +258,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setEmoji(btnEmoji('guide') ?? { name: '📖' }),
     );
 
+    const rowFixGuide = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Hướng dẫn fix lỗi')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://drive.google.com/drive/folders/1f_9E-brb-bFNP4JKmKPxTsg9oF2AsDFV?usp=drive_link')
+        .setEmoji(btnEmoji('fix') ?? { name: '🔧' }),
+    );
+
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
       .setTitle(`${e('netflix')} Netflix của Tún Kịt`)
@@ -270,7 +278,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       )
       .setFooter({ text: 'Bot by Sếp Tún Kịt' });
 
-    await interaction.reply({ embeds: [embed], components: [row, rowGuide] });
+    await interaction.reply({ embeds: [embed], components: [row, rowGuide, rowFixGuide] });
     return;
   }
 
