@@ -18,6 +18,8 @@ import path from 'path';
 import axios from 'axios';
 import { fileURLToPath } from 'url';
 
+import { initAppEmojis, e, btnEmoji, flag, planEmoji } from './utils/emoji.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
@@ -176,17 +178,14 @@ async function registerCommands() {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Application-emoji aware version (falls back to Unicode if no custom emoji uploaded)
 function planToEmoji(plan = '') {
-  const p = plan.toLowerCase();
-  if (p.includes('premium'))  return '💎';
-  if (p.includes('standard')) return '⭐';
-  if (p.includes('basic'))    return '🔵';
-  if (p.includes('mobile'))   return '📱';
-  return '🎬';
+  return planEmoji(plan);
 }
 
 async function updateStatus() {
   const count = countCookies();
+  // NOTE: Discord presence (status) only supports Unicode emojis, never custom/app emojis
   const statusText = count > 0 ? `🎬 ${count} cookie sẵn sàng` : '❌ Hết cookie — chờ admin';
 
   try {
@@ -210,6 +209,10 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ Bot online: ${c.user.tag}`);
   console.log(`🐍 Python: ${PYTHON_BIN}`);
   await registerCommands();
+
+  // Load application emojis so e('name') / btnEmoji('name') work everywhere
+  await initAppEmojis(client);
+
   // Delay nhỏ để Discord API sẵn sàng trước khi set presence
   setTimeout(() => {
     updateStatus().then(() => {
@@ -230,28 +233,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const count = countCookies();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('btn_phone').setLabel('📱 Link Điện Thoại').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('btn_pc').setLabel('🖥️ Link Máy Tính').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('btn_phone')
+        .setLabel('Link Điện Thoại')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji(btnEmoji('phone') ?? { name: '📱' }),
+      new ButtonBuilder()
+        .setCustomId('btn_pc')
+        .setLabel('Link Máy Tính')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji(btnEmoji('pc') ?? { name: '🖥️' }),
     );
 
     const rowGuide = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setLabel('📖 Hướng Dẫn Điện Thoại').setStyle(ButtonStyle.Link)
-        .setURL('https://drive.google.com/drive/folders/1QAw4249og5hJuqF4jAcwCecTvyytv2jZ?usp=drive_link'),
+        .setLabel('Hướng Dẫn Điện Thoại')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://drive.google.com/drive/folders/1QAw4249og5hJuqF4jAcwCecTvyytv2jZ?usp=drive_link')
+        .setEmoji(btnEmoji('guide') ?? { name: '📖' }),
       new ButtonBuilder()
-        .setLabel('📖 Hướng Dẫn Máy Tính').setStyle(ButtonStyle.Link)
-        .setURL('https://drive.google.com/drive/folders/1S7bINLNLjy_Phmhc76DSugm1xgA44OJ_?usp=drive_link'),
+        .setLabel('Hướng Dẫn Máy Tính')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://drive.google.com/drive/folders/1S7bINLNLjy_Phmhc76DSugm1xgA44OJ_?usp=drive_link')
+        .setEmoji(btnEmoji('guide') ?? { name: '📖' }),
     );
 
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
-      .setTitle('🎬 Netflix của Tún Kịt')
+      .setTitle(`${e('netflix')} Netflix của Tún Kịt`)
       .setDescription(
-        '**Chọn loại link bạn muốn tạo:**\n\n' +
-        '📱 **Điện Thoại** – Tối ưu cho mobile\n' +
-        '🖥️ **Máy Tính** – Tối ưu cho desktop\n\n' +
-        `> 🗂️ Còn **${count}** cookie trong kho\n\n` +
-        '> ⚠️ Nếu acc không xem được pls log out và đổi qua acc khác, ping admin nếu có thắc mắc',
+        `**Chọn loại link bạn muốn tạo:**\n\n` +
+        `${e('phone')} **Điện Thoại** – Tối ưu cho mobile\n` +
+        `${e('pc')} **Máy Tính** – Tối ưu cho desktop\n\n` +
+        `> ${e('files')} Còn **${count}** cookie trong kho\n\n` +
+        `> ${e('warning')} Nếu acc không xem được pls log out và đổi qua acc khác, ping admin nếu có thắc mắc`,
       )
       .setFooter({ text: 'Bot by Sếp Tún Kịt' });
 
@@ -264,8 +279,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const count = countCookies();
     await interaction.reply({
       content: count > 0
-        ? `🗂️ Hiện có **${count}** cookie trong kho.`
-        : `📭 Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,
+        ? `${e('files')} Hiện có **${count}** cookie trong kho.`
+        : `${e('inbox')} Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,
       ephemeral: true,
     });
     return;
@@ -274,13 +289,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── /clearcookie ───────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'clearcookie') {
     if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
+      await interaction.reply({ content: `${e('error')} Bạn không có quyền dùng lệnh này.`, ephemeral: true });
       return;
     }
     const removed = clearCookies();
     updateStatus();
     await interaction.reply({
-      content: `🗑️ Đã xóa **${removed}** cookie!\n✅ Kho hiện tại: **0** cookie.`,
+      content: `${e('trash')} Đã xóa **${removed}** cookie!\n${e('success')} Kho hiện tại: **0** cookie.`,
       ephemeral: true,
     });
     return;
@@ -289,12 +304,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── /upcookie ──────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'upcookie') {
     if (ADMIN_IDS.length > 0 && !ADMIN_IDS.includes(interaction.user.id)) {
-      await interaction.reply({ content: '❌ Bạn không có quyền dùng lệnh này.', ephemeral: true });
+      await interaction.reply({ content: `${e('error')} Bạn không có quyền dùng lệnh này.`, ephemeral: true });
       return;
     }
     const attachment = interaction.options.getAttachment('file');
     if (!attachment.name.toLowerCase().endsWith('.txt')) {
-      await interaction.reply({ content: '❌ Chỉ nhận file `.txt` chứa cookie Netflix.', ephemeral: true });
+      await interaction.reply({ content: `${e('error')} Chỉ nhận file \`.txt\` chứa cookie Netflix.`, ephemeral: true });
       return;
     }
     await interaction.deferReply({ ephemeral: true });
@@ -302,14 +317,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const res    = await axios.get(attachment.url, { responseType: 'text', timeout: 10_000 });
       const blocks = parseCookieFileIntoBlocks(res.data);
       if (!blocks.length) {
-        await interaction.editReply('❌ Không tìm thấy cookie hợp lệ trong file.\nCần dòng `.netflix.com` có `NetflixId` hoặc `SecureNetflixId`.');
+        await interaction.editReply(`${e('error')} Không tìm thấy cookie hợp lệ trong file.\nCần dòng \`.netflix.com\` có \`NetflixId\` hoặc \`SecureNetflixId\`.`);
         return;
       }
       const saved = pushCookies(blocks);
       updateStatus();
-      await interaction.editReply(`✅ Đã thêm **${saved}** cookie vào kho.\n🗂️ Tổng: **${countCookies()}** cookie.`);
+      await interaction.editReply(`${e('success')} Đã thêm **${saved}** cookie vào kho.\n${e('files')} Tổng: **${countCookies()}** cookie.`);
     } catch (err) {
-      await interaction.editReply(`❌ Lỗi: ${err.message}`);
+      await interaction.editReply(`${e('error')} Lỗi: ${err.message}`);
     }
     return;
   }
@@ -325,7 +340,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // Nếu chưa có token cho session này -> pop cookie và tạo
     if (!data) {
       if (countCookies() === 0) {
-        await interaction.editReply('❌ Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.');
+        await interaction.editReply(`${e('error')} Hết cookie netflix! Vui lòng chờ admin **Tún Kịt** upload thêm.`);
         return;
       }
 
@@ -338,7 +353,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const rawCookie = popCookie();
         if (!rawCookie) break;
 
-        await interaction.editReply(`⏳ Đang tạo link NFToken (lần thử ${attempts}/${MAX_ATTEMPTS})...`);
+        await interaction.editReply(`${e('loading')} Đang tạo link NFToken (lần thử ${attempts}/${MAX_ATTEMPTS})...`);
         result = await runConverter(rawCookie);
 
         if (!result.error) break;
@@ -352,7 +367,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!result || result.error) {
         await interaction.editReply(
-          `⚠️ Không tạo được link sau **${attempts}** lần thử.\n` +
+          `${e('warning')} Không tạo được link sau **${attempts}** lần thử.\n` +
           `Có thể do proxy không ổn định hoặc Netflix đang throttle.\n` +
           `Còn **${countCookies()}** cookie trong kho — vui lòng thử lại sau ít phút.`
         );
@@ -365,11 +380,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // Kiểm tra đã lấy link mode này chưa
     if (mode === 'phone' && data.claimedPhone) {
-      await interaction.editReply('❌ Bạn đã lấy link Điện Thoại rồi! Dùng `/start` để tạo mới.');
+      await interaction.editReply(`${e('error')} Bạn đã lấy link Điện Thoại rồi! Dùng \`/start\` để tạo mới.`);
       return;
     }
     if (mode === 'pc' && data.claimedPc) {
-      await interaction.editReply('❌ Bạn đã lấy link Máy Tính rồi! Dùng `/start` để tạo mới.');
+      await interaction.editReply(`${e('error')} Bạn đã lấy link Máy Tính rồi! Dùng \`/start\` để tạo mới.`);
       return;
     }
 
@@ -382,15 +397,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (!link) {
       const altLink  = mode === 'phone' ? result.pc_link : result.phone_link;
-      const altLabel = mode === 'phone' ? '🖥️ Link Máy Tính' : '📱 Link Điện Thoại';
+      const altLabel = mode === 'phone' ? `${e('pc')} Link Máy Tính` : `${e('phone')} Link Điện Thoại`;
       const embed = new EmbedBuilder()
         .setColor(0xe67e22)
-        .setTitle('⚠️ Chỉ có link thay thế')
+        .setTitle(`${e('warning')} Chỉ có link thay thế`)
         .setDescription(`Không có link ${mode === 'phone' ? 'Điện Thoại' : 'Máy Tính'}, dùng link thay thế bên dưới:`)
         .addFields(
-          { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
-          { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
-          { name: '🌍 Country',                       value: result.country || '??',        inline: true },
+          { name: `${e('email')} Email`,                         value: `\`${result.email || '??'}\``, inline: true },
+          { name: `${planToEmoji(result.plan)} Plan`,            value: result.plan    || '??',        inline: true },
+          { name: `${flag(result.country || '')} Country`,       value: result.country || '??',        inline: true },
           { name: altLabel, value: altLink || '(không có link nào)' },
         )
         .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
@@ -398,12 +413,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } else {
       const embed = new EmbedBuilder()
         .setColor(0x2ecc71)
-        .setTitle('✅ Tạo Link Thành Công!')
+        .setTitle(`${e('success')} Tạo Link Thành Công!`)
         .addFields(
-          { name: '📧 Email',                         value: `\`${result.email || '??'}\``, inline: true },
-          { name: `${planToEmoji(result.plan)} Plan`, value: result.plan    || '??',        inline: true },
-          { name: '🌍 Country',                       value: result.country || '??',        inline: true },
-          { name: mode === 'phone' ? '📱 Link Điện Thoại' : '🖥️ Link Máy Tính', value: link },
+          { name: `${e('email')} Email`,                         value: `\`${result.email || '??'}\``, inline: true },
+          { name: `${planToEmoji(result.plan)} Plan`,            value: result.plan    || '??',        inline: true },
+          { name: `${flag(result.country || '')} Country`,       value: result.country || '??',        inline: true },
+          { name: mode === 'phone' ? `${e('phone')} Link Điện Thoại` : `${e('pc')} Link Máy Tính`, value: link },
         )
         .setFooter({ text: `Sếp Tún Kịt • ${new Date().toLocaleTimeString('vi-VN')}` });
       await interaction.editReply({ content: '', embeds: [embed] });
@@ -412,7 +427,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // Gửi GIF ping user
     try {
       await interaction.channel.send({
-        content: `<@${userId}> đã tạo token thành công! 🎉`,
+        content: `<@${userId}> đã tạo token thành công! ${e('party')}`,
         embeds: [new EmbedBuilder().setImage('https://c.tenor.com/VcmLE85OOPUAAAAd/tenor.gif').setColor(0x2ecc71)],
       });
     } catch (e) {
@@ -427,4 +442,3 @@ if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
   process.exit(1);
 }
 client.login(DISCORD_TOKEN);
-
