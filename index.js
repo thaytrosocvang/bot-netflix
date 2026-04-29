@@ -285,13 +285,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── /status ────────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'status') {
     const count = countCookies();
-    await interaction.reply({
-      content: count > 0
-        ? `${e('files')} Hiện có **${count}** cookie trong kho.`
-        : `${e('inbox')} Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,
-      ephemeral: true,
-    });
-    return;
+    await interaction.reply({\n      content: count > 0\n        ? `${e('files')} Hiện có **${count}** cookie trong kho.`\n        : `${e('inbox')} Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,\n    });\n    return;
   }
 
   // ── /clearcookie ───────────────────────────────────────────────────────────
@@ -320,7 +314,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction.reply({ content: `${e('error')} Chỉ nhận file \`.txt\` chứa cookie Netflix.`, ephemeral: true });
       return;
     }
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply();
     try {
       const res    = await axios.get(attachment.url, { responseType: 'text', timeout: 10_000 });
       const blocks = parseCookieFileIntoBlocks(res.data);
