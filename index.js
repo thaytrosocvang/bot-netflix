@@ -285,7 +285,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── /status ────────────────────────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === 'status') {
     const count = countCookies();
-    await interaction.reply({\n      content: count > 0\n        ? `${e('files')} Hiện có **${count}** cookie trong kho.`\n        : `${e('inbox')} Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,\n    });\n    return;
+    await interaction.reply({
+      content: count > 0
+        ? `${e('files')} Hiện có **${count}** cookie trong kho.`
+        : `${e('inbox')} Kho đang trống — dùng \`/upcookie\` để thêm cookie.`,
+    });
+    return;
   }
 
   // ── /clearcookie ───────────────────────────────────────────────────────────
@@ -298,7 +303,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     updateStatus();
     await interaction.reply({
       content: `${e('trash')} Đã xóa **${removed}** cookie!\n${e('success')} Kho hiện tại: **0** cookie.`,
-      ephemeral: true,
     });
     return;
   }
